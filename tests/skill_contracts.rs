@@ -20,12 +20,11 @@ const CONFIGURABLE_SKILLS: &[&str] = &[
     "flow-start",
     "flow-code",
     "flow-review",
-    "flow-learn",
     "flow-complete",
     "flow-abort",
 ];
 
-const PHASE_ENTER_PHASES: &[&str] = &["flow-code", "flow-review", "flow-learn"];
+const PHASE_ENTER_PHASES: &[&str] = &["flow-code", "flow-review"];
 
 fn phase_number() -> std::collections::HashMap<String, usize> {
     common::phase_order()
@@ -348,16 +347,6 @@ fn code_reads_plan_at_project_root() {
     );
 }
 
-#[test]
-fn learn_reads_plan_at_project_root() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("<project_root>/<files.plan path>"),
-        "flow-learn must read the plan at `<project_root>/<files.plan path>` — \
-         a raw relative read resolves under the worktree and is blocked"
-    );
-}
-
 fn assert_agent_exists(filename: &str, required_keys: &[&str]) {
     let fm = read_agent_frontmatter(filename);
     let map = fm.as_mapping().unwrap();
@@ -384,10 +373,6 @@ fn documentation_agent_exists() {
     assert_agent_exists("documentation.md", &["name", "model", "maxTurns"]);
 }
 #[test]
-fn learn_analyst_agent_exists() {
-    assert_agent_exists("learn-analyst.md", &["name", "model", "maxTurns"]);
-}
-#[test]
 fn reviewer_agent_exists() {
     assert_agent_exists("reviewer.md", &["name", "model", "maxTurns"]);
 }
@@ -401,15 +386,6 @@ fn review_no_onboarding_agent() {
     assert!(
         !common::agents_dir().join("onboarding.md").exists(),
         "Tombstone: onboarding agent must not exist"
-    );
-}
-
-#[test]
-fn learn_analyst_agent_has_design_note() {
-    let c = common::read_agent("learn-analyst.md");
-    assert!(
-        c.contains("Design Note"),
-        "learn-analyst.md must have Design Note section"
     );
 }
 
@@ -493,8 +469,8 @@ fn read_agent_output_format_section(agent_basename: &str) -> String {
 
 // --- END-OF-FINDINGS marker contract ---
 //
-// Three context-rich/high-investigation agents — reviewer,
-// learn-analyst, documentation — declare a literal `END-OF-FINDINGS`
+// Two context-rich/high-investigation agents — reviewer and
+// documentation — declare a literal `END-OF-FINDINGS`
 // completion marker in their Output Format section so the
 // flow-review skill can detect maxTurns truncation by marker
 // absence rather than guessing from prose shape. Per-file siblings
@@ -515,11 +491,6 @@ fn assert_agent_output_format_declares_end_of_findings(agent_basename: &str) {
 #[test]
 fn reviewer_agent_declares_end_of_findings_marker() {
     assert_agent_output_format_declares_end_of_findings("reviewer.md");
-}
-
-#[test]
-fn learn_analyst_agent_declares_end_of_findings_marker() {
-    assert_agent_output_format_declares_end_of_findings("learn-analyst.md");
 }
 
 #[test]
@@ -1263,311 +1234,6 @@ fn phase_skills_halt_instructions_wrapped_in_fix_first_hard_gate() {
 }
 
 #[test]
-fn learn_no_onboarding_subagent() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        !c.contains("onboarding"),
-        "flow-learn must not reference onboarding agent"
-    );
-}
-
-#[test]
-fn learn_uses_learn_analyst_subagent() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("learn-analyst"),
-        "flow-learn must reference learn-analyst sub-agent"
-    );
-}
-
-/// Extract the flow-learn Step 1 section ("Gather and launch agent"), where
-/// the learn-analyst prompt is constructed. Agent-prompt-construction
-/// assertions are scoped to this slice so they do not false-positive on later
-/// steps — Step 5 rule-routing legitimately discusses "rules files" and
-/// "Project CLAUDE.md". Bounded-slice pattern per
-/// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions".
-fn flow_learn_step1(skill: &str) -> &str {
-    skill
-        .split_once("## Step 1 — Gather and launch agent")
-        .and_then(|(_, t)| t.split_once("\n## Step 2").map(|(s, _)| s))
-        .expect("flow-learn must have Step 1 and Step 2 section headers")
-}
-
-#[test]
-fn learn_analyst_input_uses_diff_file_handoff() {
-    // The learn-analyst agent receives the diff as a file path it Reads
-    // (the context-sparse shape the Phase 3 Review agents already use),
-    // not as inline `git diff` bytes embedded in the prompt. Regression:
-    // a revert to an inline diff Input entry re-introduces the
-    // prompt-overflow floor that returns `Prompt is too long` with zero
-    // findings on large diffs. Consumer: the context-sparse Learn
-    // architecture in `.claude/rules/cognitive-isolation.md`.
-    //
-    // The guard binds the file-handoff SEMANTICS, not a single literal: it
-    // requires the read-and-do-not-embed instruction and rejects the inline
-    // diff revert under any bolded label casing (`**DIFF**`, `**Full diff**`)
-    // and the `(full diff output)` dump marker the pre-PR prompt used — so a
-    // reworded revert cannot evade an exact-literal check.
-    let c = common::read_agent("learn-analyst.md");
-    let lc = c.to_ascii_lowercase();
-    // Whitespace-normalized form: the agent prose line-wraps, so a phrase
-    // check against the raw text is wrap-fragile (`do\n   not embed`).
-    // Collapse runs of whitespace before matching multi-word phrases.
-    let lc_ws: String = lc.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(
-        c.contains("SUBSTANTIVE_DIFF_FILE"),
-        "learn-analyst Input must name the SUBSTANTIVE_DIFF_FILE file-path handoff"
-    );
-    assert!(
-        lc_ws.contains("do not embed"),
-        "learn-analyst Input must instruct reading the diff file without embedding its \
-         contents in the prompt — the file-handoff semantics, not just the token name"
-    );
-    assert!(
-        !c.contains("**DIFF**") && !lc.contains("**full diff**") && !lc.contains("**diff**"),
-        "learn-analyst Input must not carry an inline diff block under any bolded `**…diff…**` label"
-    );
-    assert!(
-        !lc.contains("(full diff") && !lc.contains("diff output)"),
-        "learn-analyst Input must not inline a diff dump (`(full diff output)`-style marker)"
-    );
-}
-
-#[test]
-fn learn_step1_invokes_capture_diff() {
-    // Step 1 captures the diff via `bin/flow capture-diff` (which writes
-    // the substantive diff to a canonical `.flow-states/<branch>/` path)
-    // rather than embedding `git diff` output inline in the agent prompt.
-    // Regression: a revert to the inline `git diff origin/...HEAD` capture
-    // re-introduces the prompt-overflow floor. Consumer: the bounded
-    // agent-prompt budget the context-sparse handoff preserves.
-    //
-    // The command must appear inside a ```bash fence, not merely as prose —
-    // a bare substring check would pass on a prose sentence describing the
-    // old command while the actual capture reverted to an inline `git diff`.
-    let c = common::read_skill("flow-learn");
-    let step1 = flow_learn_step1(&c);
-    let cmd = "capture-diff --branch <branch> --base <base_branch>";
-    let idx = step1.find(cmd).unwrap_or_else(|| {
-        panic!(
-            "flow-learn Step 1 must invoke `bin/flow capture-diff --branch <branch> \
-             --base <base_branch>` so the learn-analyst agent receives the substantive \
-             diff via file handoff"
-        )
-    });
-    let fence_open = step1[..idx].rfind("```").unwrap_or_else(|| {
-        panic!("the capture-diff command must sit inside a fenced code block, not prose")
-    });
-    assert!(
-        step1[fence_open..].starts_with("```bash"),
-        "the capture-diff invocation must be inside a ```bash fence (a real invocation), \
-         not a prose mention — the nearest preceding fence is a closing fence, so the \
-         command is in prose"
-    );
-}
-
-#[test]
-fn learn_prompt_has_no_inline_rule_corpus() {
-    // The agent reads CLAUDE.md and the `.claude/rules/` corpus itself on
-    // demand; the skill no longer inlines them into the agent prompt.
-    // Regression: re-adding an inline CLAUDE.md / rule-corpus block restores
-    // the overflow floor that defeats the audit on large rule corpora.
-    // Consumer: the inline-floor elimination that is the primary fix.
-    //
-    // Scoped to Step 1 (the prompt-construction block) and matched
-    // case-insensitively across `rule file`/`rules file` and `project
-    // claude.md` so a reworded/recased inline-corpus revert (`Rule files:`,
-    // `Project CLAUDE.md:`) cannot evade an uppercased exact-literal check.
-    // Later steps legitimately say "rules files", which is why the slice is
-    // bounded.
-    let c = common::read_skill("flow-learn");
-    let lc = flow_learn_step1(&c).to_ascii_lowercase();
-    assert!(
-        !lc.contains("rule file") && !lc.contains("rules file"),
-        "flow-learn Step 1 must not inline a rule-corpus block (any case of \
-         `rule file`/`rules file`) — the agent globs and reads `.claude/rules/` itself"
-    );
-    assert!(
-        !lc.contains("project claude.md"),
-        "flow-learn Step 1 must not inline a `Project CLAUDE.md` block — the agent reads CLAUDE.md itself"
-    );
-}
-
-#[test]
-fn learn_uses_partition_truncation_recovery() {
-    // Truncation recovery detects an absent `END-OF-FINDINGS` marker and
-    // re-invokes the agent against a narrowed partition, combining
-    // findings — the same recovery the Review skill implements. Regression:
-    // a revert to the no-op identity re-invoke (re-sending an unchanged
-    // prompt) makes recovery impossible, so a truncated agent silently
-    // produces zero findings. Consumer: the partition-and-combine recovery
-    // in `.claude/rules/cognitive-isolation.md` "Context Budget + Truncation
-    // Recovery".
-    //
-    // The no-op-retry negative is matched case-insensitively across every
-    // phrasing of "unchanged prompt" (`the same prompt`, `identical prompt`,
-    // `prompt unchanged`, `re-send the prompt`) so a synonym revert cannot
-    // evade the single-literal check.
-    let c = common::read_skill("flow-learn");
-    let step1 = flow_learn_step1(&c);
-    let lc = step1.to_ascii_lowercase();
-    assert!(
-        step1.contains("END-OF-FINDINGS"),
-        "flow-learn must detect truncation via the absent `END-OF-FINDINGS` marker"
-    );
-    assert!(
-        lc.contains("partition"),
-        "flow-learn must describe partition-and-combine truncation recovery"
-    );
-    assert!(
-        !lc.contains("same prompt")
-            && !lc.contains("identical prompt")
-            && !lc.contains("prompt unchanged")
-            && !lc.contains("re-send the prompt")
-            && !lc.contains("resend the prompt"),
-        "flow-learn must not re-invoke the agent with an unchanged prompt (any phrasing) — \
-         that no-op retry cannot recover from prompt-overflow truncation"
-    );
-}
-
-/// Extract the flow-learn `## Step N` section, bounded from the `## Step N `
-/// header to the next `## ` heading. Bounded-slice pattern per
-/// `.claude/rules/testing-gotchas.md` "Subsection-Local Assertions" so a
-/// per-step `learn_step=` assertion does not leak into a sibling step. The
-/// trailing space in the marker (`## Step 1 `) anchors on the header line and
-/// never matches prose like `Skip to Step 1`.
-fn flow_learn_step(skill: &str, n: u32) -> &str {
-    let marker = format!("## Step {} ", n);
-    let tail = skill
-        .split_once(&marker)
-        .map(|(_, t)| t)
-        .unwrap_or_else(|| panic!("flow-learn must have a `## Step {n}` header"));
-    tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail)
-}
-
-/// The integer following the LAST `--set learn_step=` write inside a step
-/// section, or `None` when the section contains no counter write. Anchors on
-/// the `--set ` prefix so prose that mentions a `learn_step=N` value (e.g. a
-/// resume-window explanation) is not mistaken for a counter write.
-fn last_learn_step_value(section: &str) -> Option<u32> {
-    let marker = "--set learn_step=";
-    let idx = section.rfind(marker)?;
-    let digits: String = section[idx + marker.len()..]
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    digits.parse().ok()
-}
-
-#[test]
-fn flow_learn_resume_check_covers_every_step() {
-    // The Resume Check must map every reachable `learn_step` value 1..6 to a
-    // step. Regression: a Resume Check that omits a value N in 1..6 leaves a
-    // crash at `learn_step=N` to restart the phase from Step 1, re-launching
-    // the cognitively-isolated learn-analyst agent and re-running synthesis.
-    // Consumer: the per-step monotonic counter the Resume Check resumes from.
-    let c = common::read_skill("flow-learn");
-    let tail = c
-        .split_once("## Resume Check")
-        .map(|(_, t)| t)
-        .expect("flow-learn must have a `## Resume Check` section");
-    let section = tail.split_once("\n## ").map(|(s, _)| s).unwrap_or(tail);
-    for n in 1..=6 {
-        assert!(
-            section.contains(&format!("`{n}`")),
-            "flow-learn Resume Check must map `learn_step` value `{n}` to a step"
-        );
-    }
-}
-
-#[test]
-fn flow_learn_each_step_ends_with_its_own_counter() {
-    // Each Step N (N in 1..6) must end with `learn_step=N`, so an interrupt
-    // anywhere inside the step resumes at the correct next step. Regression:
-    // a counter write placed at a step's START, or a step writing a value
-    // that does not equal its own number, makes the Resume Check resume at
-    // the wrong step (and a Step-5/Step-6 pair both writing `=5` re-enters
-    // the issue-filing loop). Consumer: the Resume Check `N → Step N+1` mapping.
-    let c = common::read_skill("flow-learn");
-    for n in 1..=6 {
-        let section = flow_learn_step(&c, n);
-        assert_eq!(
-            last_learn_step_value(section),
-            Some(n),
-            "flow-learn Step {n} must end with `set-timestamp --set learn_step={n}`"
-        );
-    }
-}
-
-#[test]
-fn flow_learn_step7_writes_no_counter() {
-    // Step 7 is terminal — there is no Step 8 to resume into. A Step 7
-    // counter write of `learn_step=7` would push the unguarded
-    // `src/tui_data.rs` timeline arm to `display_step = 8`, past the names
-    // map's max index, producing a "step 8 of 7" annotation. Regression: a
-    // Step 7 counter write. Consumer: the `src/tui_data.rs:361` timeline
-    // annotation (`learn_step + 1`).
-    let c = common::read_skill("flow-learn");
-    let step7 = flow_learn_step(&c, 7);
-    assert!(
-        !step7.contains("--set learn_step="),
-        "flow-learn Step 7 (terminal) must write no `learn_step=` counter"
-    );
-}
-
-#[test]
-fn flow_learn_step6_writes_complete_marker_after_filing() {
-    // Step 6's `learn_step=6` write must appear AFTER the `bin/flow issue`
-    // filing block, so an interrupt during filing leaves `learn_step=5`
-    // (resume re-enters Step 6) rather than `learn_step=6` (resume skips to
-    // Step 7, dropping unfiled findings). Regression: a `learn_step=6` write
-    // placed before the filing block lets a mid-filing interrupt skip to
-    // Step 7 and re-file duplicate GitHub issues on resume. Consumer: the
-    // Step 6 "Skip already-filed findings" idempotency subsection, which the
-    // end-of-step marker pairs with.
-    let c = common::read_skill("flow-learn");
-    let step6 = flow_learn_step(&c, 6);
-    let issue_idx = step6
-        .find("bin/flow issue")
-        .expect("flow-learn Step 6 must invoke `bin/flow issue`");
-    let write_idx = step6
-        .find("--set learn_step=6")
-        .expect("flow-learn Step 6 must write `--set learn_step=6`");
-    assert!(
-        write_idx > issue_idx,
-        "flow-learn Step 6 must write `learn_step=6` AFTER the `bin/flow issue` filing block"
-    );
-}
-
-#[test]
-fn flow_learn_step6_skips_already_filed_findings() {
-    // Step 6's filing loop must consult the durable state `findings[]`
-    // array and skip any finding already recorded with `outcome=="filed"`,
-    // reusing its recorded URL, BEFORE calling `bin/flow issue`. Regression:
-    // a Step 6 resume re-files duplicate GitHub issues because
-    // `bin/flow issue` / `gh issue create` is not idempotent. Consumer: the
-    // end-of-Step-6 `learn_step=6` marker closes the whole-step window; this
-    // skip closes the residual mid-filing window.
-    let c = common::read_skill("flow-learn");
-    let step6 = flow_learn_step(&c, 6);
-    let lc = step6.to_ascii_lowercase();
-    let skip_idx = step6
-        .find("findings[]")
-        .expect("flow-learn Step 6 must consult the state `findings[]` array before filing");
-    assert!(
-        lc.contains("already") && lc.contains("filed") && lc.contains("skip"),
-        "flow-learn Step 6 must instruct skipping findings already recorded as filed"
-    );
-    let issue_idx = step6
-        .find("bin/flow issue")
-        .expect("flow-learn Step 6 must invoke `bin/flow issue`");
-    assert!(
-        skip_idx < issue_idx,
-        "flow-learn Step 6's already-filed skip check must appear BEFORE the `bin/flow issue` call"
-    );
-}
-
-#[test]
 fn review_agents_have_sufficient_max_turns() {
     for agent in &[
         "reviewer.md",
@@ -1579,17 +1245,6 @@ fn review_agents_have_sufficient_max_turns() {
         let turns = fm["maxTurns"].as_u64().unwrap_or(0);
         assert!(turns >= 40, "{} maxTurns ({}) must be >= 40", agent, turns);
     }
-}
-
-#[test]
-fn learn_agents_have_sufficient_max_turns() {
-    let fm = read_agent_frontmatter("learn-analyst.md");
-    let turns = fm["maxTurns"].as_u64().unwrap_or(0);
-    assert!(
-        turns >= 25,
-        "learn-analyst.md maxTurns ({}) must be >= 25",
-        turns
-    );
 }
 
 #[test]
@@ -2719,97 +2374,6 @@ fn no_skill_fragment_files() {
     }
 }
 
-#[test]
-fn learning_has_no_worktree_memory_rescue() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        !c.contains("memory rescue") && !c.contains("rescue memory"),
-        "Learning must not rescue worktree memory"
-    );
-}
-
-#[test]
-fn learning_repo_destinations_use_worktree_path() {
-    let c = common::read_skill("flow-learn");
-    if c.contains("CLAUDE.md") || c.contains(".claude/rules/") {
-        assert!(
-            !c.contains("project_root/CLAUDE.md") && !c.contains("project_root/.claude"),
-            "Learning repo destinations must use worktree path, not project root"
-        );
-    }
-}
-
-#[test]
-fn learning_has_no_private_destination_paths() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        !c.contains("~/.claude/rules/") && !c.contains("~/.claude/CLAUDE.md"),
-        "Learning must not use private destination paths"
-    );
-}
-
-#[test]
-fn learning_destinations_are_repo_only() {
-    let c = common::read_skill("flow-learn");
-    // If the skill mentions destination paths, they should be repo-level
-    assert!(
-        !c.contains("user-level") || c.contains("never"),
-        "Learning destinations must be repo-only"
-    );
-}
-
-#[test]
-fn learning_detects_dangling_async_operations() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("dangling") || c.contains("async") || c.contains("background"),
-        "Learning must detect dangling async operations"
-    );
-}
-
-#[test]
-fn learning_edits_rules_directly() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("write-rule") || c.contains("Edit") || c.contains("bin/flow write-rule"),
-        "Learning must edit rules directly"
-    );
-}
-
-#[test]
-fn learning_files_plugin_issues_against_plugin_repo() {
-    let c = common::read_skill("flow-learn");
-    // Plugin process gaps and enforcement escalations must route to
-    // the plugin repo. Issue #1405 removed the redundant `Flow`
-    // label, leaving `--repo benkruger/flow` as the routing signal.
-    assert!(
-        c.contains("--repo benkruger/flow"),
-        "Learn must file plugin issues with --repo benkruger/flow"
-    );
-}
-
-#[test]
-fn learn_step3_excludes_flow_process_gaps() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("process gap") || c.contains("Process Gap"),
-        "Learn Step 3 must handle process gaps"
-    );
-}
-
-/// flow-learn Step 2 declares `correction` notes mandatory user
-/// directives that always route to a durable rule. Regression guard:
-/// an edit removing the mandatory-routing instruction would let a
-/// session silently drop a user's `/flow:flow-note` correction.
-#[test]
-fn learn_routes_correction_notes_as_mandatory_directives() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("Every `correction` note is a non-negotiable user directive: it MUST be routed to a durable rule and never dropped"),
-        "flow-learn must declare correction notes mandatory user directives"
-    );
-}
-
 // --- Issue filing ---
 
 #[test]
@@ -3116,12 +2680,6 @@ fn flow_review_resume_anchor_precedes_branch_detection() {
     assert_resume_anchor_wiring("flow-review");
 }
 
-#[test]
-fn flow_learn_resume_anchor_precedes_branch_detection() {
-    // Regression: same cwd-reset hazard on the flow-learn resume path.
-    assert_resume_anchor_wiring("flow-learn");
-}
-
 /// Shared assertions for the Gap B `capture-diff` error handling in a
 /// phase skill's Step 1. `bin/flow capture-diff` returns
 /// `{status:"error", message}` when `origin/<base>` is not present
@@ -3165,13 +2723,6 @@ fn flow_review_step1_handles_capture_diff_error() {
     // Regression: an unhandled capture-diff error would hand the four
     // review agents a missing diff. Step 1 must fetch+retry once, then halt.
     assert_capture_diff_error_handling("flow-review");
-}
-
-#[test]
-fn flow_learn_step1_handles_capture_diff_error() {
-    // Regression: an unhandled capture-diff error would hand the
-    // learn-analyst a missing diff. Step 1 must fetch+retry once, then halt.
-    assert_capture_diff_error_handling("flow-learn");
 }
 
 /// flow-complete's Step 3 `Yes, merge` answer must invoke
@@ -3459,21 +3010,6 @@ fn flow_review_re_anchors_cwd_after_phase_enter() {
     );
 }
 
-/// Regression: flow-learn/SKILL.md must instruct `cd "<worktree_cwd>"`
-/// inside a bash fence between the phase-enter HARD-GATE and the
-/// Resume Check. Without this, a session resuming Learn after context
-/// loss cannot re-anchor cwd at runtime. Consumer: every Learn-phase
-/// session running on a mono-repo flow.
-#[test]
-fn flow_learn_re_anchors_cwd_after_phase_enter() {
-    let c = common::read_skill("flow-learn");
-    let bounded = slice_between_phase_enter_and_resume_check(&c);
-    assert!(
-        bash_fence_contains(bounded, r#"cd "<worktree_cwd>""#),
-        "flow-learn/SKILL.md must instruct `cd \"<worktree_cwd>\"` inside a bash fence between phase-enter and Resume Check"
-    );
-}
-
 #[test]
 fn release_complete_banner_confirms_marketplace_update() {
     let c = fs::read_to_string(
@@ -3744,24 +3280,6 @@ fn logged_phases_use_bin_flow_log() {
 }
 
 #[test]
-fn learn_step3_requires_output_for_findings() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("finding") || c.contains("Finding"),
-        "Learn Step 3 must require output for findings"
-    );
-}
-
-#[test]
-fn learn_detects_truncated_agent_output() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("truncat") || c.contains("marker"),
-        "Learn must check agent output for expected structure"
-    );
-}
-
-#[test]
 fn anti_patterns_has_inline_output_rule() {
     let path = common::repo_root()
         .join(".claude")
@@ -4013,14 +3531,6 @@ fn flow_prime_recommended_preset_matches_new_shape() {
         "Recommended preset: flow-review.continue must be 'auto'"
     );
     assert_eq!(
-        recommended["flow-learn"]["commit"], "auto",
-        "Recommended preset: flow-learn.commit must be 'auto'"
-    );
-    assert_eq!(
-        recommended["flow-learn"]["continue"], "auto",
-        "Recommended preset: flow-learn.continue must be 'auto'"
-    );
-    assert_eq!(
         recommended["flow-complete"]["continue"], "manual",
         "Recommended preset: flow-complete.continue must be 'manual'"
     );
@@ -4074,14 +3584,6 @@ fn flow_prime_fully_manual_preset_keeps_start_continue_auto() {
     assert_eq!(
         fully_manual["flow-review"]["continue"], "manual",
         "Fully manual preset: flow-review.continue must be 'manual'"
-    );
-    assert_eq!(
-        fully_manual["flow-learn"]["commit"], "manual",
-        "Fully manual preset: flow-learn.commit must be 'manual'"
-    );
-    assert_eq!(
-        fully_manual["flow-learn"]["continue"], "manual",
-        "Fully manual preset: flow-learn.continue must be 'manual'"
     );
     assert_eq!(
         fully_manual["flow-complete"]["continue"], "manual",
@@ -4309,71 +3811,6 @@ fn code_documents_measurement_only_task_pathway() {
     assert!(
         subsection.contains("bin/flow ci"),
         "Measurement-only subsection must keep the bin/flow ci Gate mandatory"
-    );
-}
-
-// --- Learn phase ---
-
-#[test]
-fn learn_has_resume_check() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("Resume Check") || c.contains("## Resume"),
-        "Learn must have Resume Check section"
-    );
-}
-
-#[test]
-fn learn_has_self_invocation_check() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("Self-Invocation") || c.contains("--continue-step"),
-        "Learn must have Self-Invocation Check section"
-    );
-}
-
-#[test]
-fn learn_step_4_promotes_permissions() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("promote-permissions"),
-        "Learn Step 4 must call promote-permissions"
-    );
-}
-
-#[test]
-fn learn_step_5_self_invokes() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("flow:flow-learn --continue-step"),
-        "Learn Step 5 must self-invoke"
-    );
-}
-
-#[test]
-fn learn_sets_continue_pending_before_child_skills() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("_continue_pending"),
-        "Learn must set _continue_pending"
-    );
-}
-
-#[test]
-fn learn_steps_record_completion() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("set-timestamp"),
-        "Learn steps must record completion"
-    );
-}
-
-#[test]
-fn learn_skill_sets_steps_total() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("--steps-total") || c.contains("steps_total"),
-        "Learn phase-enter must set --steps-total"
     );
 }
 
@@ -5044,24 +4481,6 @@ fn review_no_two_dot_diff() {
 }
 
 #[test]
-fn learn_no_two_dot_diff() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        !c.contains("origin/main..HEAD") || c.contains("origin/main...HEAD"),
-        "Tombstone: two-dot diff replaced"
-    );
-}
-
-#[test]
-fn learn_no_doc_drift_filing() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        !c.contains("Documentation Drift"),
-        "Tombstone: doc drift filing moved to code review"
-    );
-}
-
-#[test]
 fn reviewer_agent_no_two_dot_diff() {
     let c = common::read_agent("reviewer.md");
     assert!(
@@ -5181,23 +4600,6 @@ fn flow_review_diff_uses_base_branch_subcommand() {
     assert!(
         !c.contains("git diff origin/main...HEAD"),
         "flow-review SKILL.md must not embed `git diff origin/main...HEAD` — \
-         resolve base_branch via `bin/flow base-branch` instead"
-    );
-}
-
-/// flow-learn constructs its diff range from `bin/flow base-branch`
-/// rather than the hardcoded `origin/main`. Same contract as
-/// `flow_review_diff_uses_base_branch_subcommand`.
-#[test]
-fn flow_learn_diff_uses_base_branch_subcommand() {
-    let c = common::read_skill("flow-learn");
-    assert!(
-        c.contains("bin/flow base-branch") || c.contains("bin/flow\" base-branch"),
-        "flow-learn SKILL.md must invoke `bin/flow base-branch` to resolve the diff range"
-    );
-    assert!(
-        !c.contains("git diff origin/main...HEAD"),
-        "flow-learn SKILL.md must not embed `git diff origin/main...HEAD` — \
          resolve base_branch via `bin/flow base-branch` instead"
     );
 }
@@ -6139,7 +5541,7 @@ fn phase_1_hard_gate_requires_rerun_with_arguments() {
 // Consumers:
 //   - Every FLOW skill that writes to `.flow-states/` or project-root
 //     persistent files (flow-plan, flow-commit, flow-start, flow-code,
-//     flow-learn, flow-orchestrate) relies on the Write-side invariant
+//     flow-orchestrate) relies on the Write-side invariant
 //     to not block mid-phase.
 //   - `flow-plan`'s plan-check fix loop relies on the Edit-side
 //     invariant so the Edit tool can open the plan on re-entry.
@@ -8540,72 +7942,6 @@ fn persistence_routing_has_obey_vs_describe_test() {
         section.contains("- **Discard**"),
         "`## What CLAUDE.md Is Not For` section must list `Discard` as a \
          bullet destination"
-    );
-}
-
-// --- flow-learn Step 3 obey-vs-describe gate ---
-
-/// `flow-learn` Step 3's `### Apply CLAUDE.md changes` subsection must
-/// gate on the obey-vs-describe test before routing any finding into
-/// CLAUDE.md. Without the gate, descriptive findings route into
-/// CLAUDE.md and compound token cost across every session.
-///
-/// The gate must appear BEFORE the `**Compose**` instruction so a
-/// future edit cannot bury the gate after the write-mechanics
-/// instructions. Burying the gate at the bottom of the subsection
-/// would silently break the gating semantics — the model would
-/// execute Compose/Read/Write/Apply before ever consulting the
-/// gate, defeating the protection.
-///
-/// The split anchor `"\n### Apply CLAUDE.md changes\n"` bounds the
-/// match to the heading at column 0 followed by a newline. Without
-/// the heading-shape anchor, inline prose mentioning the
-/// subsection by name in the Routing section's cross-reference
-/// would satisfy the split and produce a sliced subsection that
-/// includes unrelated content from earlier in the file.
-#[test]
-fn flow_learn_step_3_has_obey_vs_describe_gate() {
-    let content = common::read_skill("flow-learn");
-    let tail = content
-        .split_once("\n### Apply CLAUDE.md changes\n")
-        .map(|(_, t)| t)
-        .expect("flow-learn must contain `### Apply CLAUDE.md changes` heading");
-    let subsection = tail.split_once("\n### ").map(|(s, _)| s).unwrap_or(tail);
-    assert!(
-        subsection.contains("obey-vs-describe test"),
-        "flow-learn Step 3 `### Apply CLAUDE.md changes` must gate on the \
-         `obey-vs-describe test` before routing into CLAUDE.md"
-    );
-    assert!(
-        subsection.contains("module doc comment"),
-        "flow-learn Step 3 `### Apply CLAUDE.md changes` must name `module \
-         doc comment` as an alternative destination"
-    );
-    assert!(
-        subsection.contains("`docs/`"),
-        "flow-learn Step 3 `### Apply CLAUDE.md changes` must name the \
-         `docs/` subtree as an alternative destination"
-    );
-    assert!(
-        subsection.contains("discard"),
-        "flow-learn Step 3 `### Apply CLAUDE.md changes` must name `discard` \
-         as an alternative destination"
-    );
-    // Gate ordering: the obey-vs-describe gate must appear BEFORE
-    // the first `**Compose**` instruction. A future edit that
-    // moves the gate after Compose would silently break the
-    // gating semantics.
-    let gate_pos = subsection
-        .find("obey-vs-describe test")
-        .expect("gate phrase asserted above");
-    let compose_pos = subsection.find("**Compose**").expect(
-        "flow-learn Step 3 `### Apply CLAUDE.md changes` must contain a `**Compose**` instruction",
-    );
-    assert!(
-        gate_pos < compose_pos,
-        "flow-learn Step 3 obey-vs-describe gate must appear BEFORE the \
-         `**Compose**` instruction; burying the gate after Compose defeats \
-         the gating semantics"
     );
 }
 

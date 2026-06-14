@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FLOW — Software Development Lifecycle for Claude Code</title>
-  <meta name="description" content="An opinionated 5-phase software development lifecycle plugin for Claude Code. Three commands you type. Five phases that run themselves. Language-agnostic — every project owns its toolchain via repo-local bin/* delegation.">
+  <meta name="description" content="An opinionated 4-phase software development lifecycle plugin for Claude Code. Three commands you type. Four phases that run themselves. Language-agnostic — every project owns its toolchain via repo-local bin/* delegation.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=VT323&display=swap">
@@ -403,7 +403,7 @@
     .ascii-pipeline .row .label.code { color: var(--green); }
     .ascii-pipeline .row .detail { color: var(--phosphor); font-size: 13px; line-height: 1.5; }
 
-    /* — Features grid (Guardrails, Learning destinations) — */
+    /* — Features grid (Guardrails, Corpus health) — */
     .crt-features {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
@@ -632,8 +632,8 @@
       <div class="hero-prompt"><span class="amber">▌</span> SOFTWARE DEVELOPMENT LIFECYCLE · FOR CLAUDE CODE</div>
       <h1 class="hero">FLOW<span class="cursor"></span></h1>
       <p class="lede">
-        An opinionated five-phase development lifecycle for Claude Code.
-        Three commands you type. Five phases that run themselves.
+        An opinionated four-phase development lifecycle for Claude Code.
+        Three commands you type. Four phases that run themselves.
         Same order, every time. <span class="hl">Language-agnostic</span> &mdash;
         every project owns its toolchain via repo-local <code>bin/*</code> delegation.
       </p>
@@ -692,8 +692,8 @@
       <div class="meta-right">03 · workflow</div>
     </div>
     <div class="window-body">
-      <h2>Three commands.<br/><span class="amber">Five phases.</span></h2>
-      <p>Three commands drive the workflow. Five phases run themselves.</p>
+      <h2>Three commands.<br/><span class="amber">Four phases.</span></h2>
+      <p>Three commands drive the workflow. Four phases run themselves.</p>
 
       <h3>commands · user-typed</h3>
       <div class="ascii-pipeline">
@@ -715,7 +715,7 @@
       </div>
 
       <h3>phases · auto-chained</h3>
-      <p>Once <code>/flow-start</code> lands, you're inside the lifecycle. Each phase is its own skill, but <strong>you don't type them</strong> — Claude auto-chains Code → Review → Learn → Complete according to your autonomy settings.</p>
+      <p>Once <code>/flow-start</code> lands, you're inside the lifecycle. Each phase is its own skill, but <strong>you don't type them</strong> — Claude auto-chains Code → Review → Complete according to your autonomy settings.</p>
 
       <div class="ascii-pipeline">
         <div class="row">
@@ -735,11 +735,6 @@
         </div>
         <div class="row">
           <span class="glyph">04</span>
-          <span class="label">Learn</span>
-          <span class="detail">Capture corrections, route to permanent homes. <code>CLAUDE.md</code> and project rules. Plugin gaps filed as issues.</span>
-        </div>
-        <div class="row">
-          <span class="glyph">05</span>
           <span class="label">Complete</span>
           <span class="detail">Merge the PR, close issues referenced in the prompt, remove the worktree, delete the state file.</span>
         </div>
@@ -828,59 +823,19 @@
     </div>
   </div>
 
-  <!-- LEARNING SYSTEM -->
+  <!-- CORPUS HEALTH -->
   <div class="window section-window">
     <div class="window-bar">
       <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
-      <div class="title">tail -f <span class="accent">./learnings.log</span></div>
-      <div class="meta-right">06 · learning</div>
+      <div class="title">man <span class="accent">flow.health</span></div>
+      <div class="meta-right">06 · health</div>
     </div>
     <div class="window-body">
-      <h2>The <span class="amber">learning</span> system.</h2>
-      <p>Most AI coding tools forget everything when the session ends. FLOW captures corrections as they happen and routes each learning to its permanent home in the repo — where it compounds across every future feature.</p>
-
-      <div class="ascii-pipeline">
-        <div class="row">
-          <span class="glyph">01</span>
-          <span class="label">Capture</span>
-          <span class="detail">User corrects Claude → <code>/flow-note</code> captures it automatically</span>
-        </div>
-        <div class="row">
-          <span class="glyph">02</span>
-          <span class="label">Observe</span>
-          <span class="detail">Claude writes patterns and observations to auto-memory during feature work</span>
-        </div>
-        <div class="row">
-          <span class="glyph">03</span>
-          <span class="label">Synthesize</span>
-          <span class="detail">Learn-analyst agent audits the diff, plan, state notes, and rule corpus</span>
-        </div>
-        <div class="row">
-          <span class="glyph">04</span>
-          <span class="label">Route</span>
-          <span class="detail">Each learning lands at its correct permanent destination</span>
-        </div>
-        <div class="row">
-          <span class="glyph">05</span>
-          <span class="label">Survive</span>
-          <span class="detail">Worktree destroyed, state file deleted — nothing is lost</span>
-        </div>
-      </div>
-
-      <h3>two destinations</h3>
-      <div class="crt-features">
-        <div class="feat">
-          <h4>Project <code>CLAUDE.md</code></h4>
-          <p>Process rules and project architecture. "Always run <code>bin/flow ci</code> before committing."</p>
-        </div>
-        <div class="feat">
-          <h4>Project Rules</h4>
-          <p>Coding anti-patterns and gotchas. "Never use <code>update_column</code> in tests."</p>
-        </div>
-      </div>
+      <h2>Corpus <span class="amber">health.</span></h2>
+      <p>Corrections don't evaporate at session end. <code>/flow-note</code> captures them to the flow's state file as they happen, and the session-start hook re-surfaces the capture instruction whenever you correct Claude. Two read-only utilities keep the instruction corpus — <code>CLAUDE.md</code>, project rules, and memory — coherent as it grows.</p>
 
       <h3>maintenance</h3>
-      <p>When you extract learnings across many sessions into <code>CLAUDE.md</code> and project rules, references go stale, constraints duplicate, and content drifts to the wrong destination. Two read-only utilities audit the corpus between features.</p>
+      <p>As <code>CLAUDE.md</code> and project rules accumulate across many features, references go stale, constraints duplicate, and content drifts to the wrong destination. Two read-only utilities audit the corpus between features.</p>
 
       <div class="crt-features">
         <div class="feat">
@@ -929,7 +884,6 @@
   <span class="t-green">[x]</span> Start          &lt;1m
   <span class="t-amber">[&gt;]</span> Code           8m  <span class="t-dim">(task 2/5)</span>
   <span class="t-dim">[ ]</span> Review
-  <span class="t-dim">[ ]</span> Learn
   <span class="t-dim">[ ]</span> Complete
 
   <span class="t-bold">Tokens</span>
@@ -1002,7 +956,7 @@
       </div>
 
       <h3>work your backlog overnight</h3>
-      <p>Triage what's open with <code>/flow-issues</code> and <code>/flow-triage-issue</code>, then feed the decomposed graph into <code>/flow-orchestrate</code>. Each issue runs through all 5 phases autonomously. Check progress — or the final tally — in <code>flow tui</code>'s Orchestration tab.</p>
+      <p>Triage what's open with <code>/flow-issues</code> and <code>/flow-triage-issue</code>, then feed the decomposed graph into <code>/flow-orchestrate</code>. Each issue runs through all 4 phases autonomously. Check progress — or the final tally — in <code>flow tui</code>'s Orchestration tab.</p>
 
       <div class="ascii-pipeline">
         <div class="row">
@@ -1018,7 +972,7 @@
         <div class="row">
           <span class="glyph">03</span>
           <span class="label">Process</span>
-          <span class="detail">Each issue runs Start → Code → Review → Learn → Complete autonomously</span>
+          <span class="detail">Each issue runs Start → Code → Review → Complete autonomously</span>
         </div>
         <div class="row">
           <span class="glyph">04</span>
@@ -1072,7 +1026,7 @@
         <div class="tenet">
           <div class="id">event <span class="amber">▶</span></div>
           <h4>Phase Updates</h4>
-          <p>Start, Code, Review, Learn, Complete — each phase posts its outcome and timing as a thread reply.</p>
+          <p>Start, Code, Review, Complete — each phase posts its outcome and timing as a thread reply.</p>
         </div>
         <div class="tenet">
           <div class="id">config <span class="amber">⚙</span></div>
@@ -1148,7 +1102,7 @@
     </div>
     <div class="window-body">
       <h2>Three steps.<br/><span class="amber">One plugin.</span></h2>
-      <p>Five phase skills plus the full planning and health catalog, state file infrastructure, session hooks, and reference documentation — one plugin. Marketplace-distributed; updates ship automatically.</p>
+      <p>Four phase skills plus the full planning and health catalog, state file infrastructure, session hooks, and reference documentation — one plugin. Marketplace-distributed; updates ship automatically.</p>
 
       <div class="step-label">step 01 — install in claude code</div>
       <div class="install-block"><span class="prompt">$ </span>/plugin marketplace add benkruger/flow

@@ -485,8 +485,8 @@ fn setup_active_flow_repo(parent: &Path, branch: &str) -> (PathBuf, PathBuf) {
 fn promote_subprocess_active_flow_without_confirm_skips() {
     // Active flow on the worktree's branch + no --confirm-on-flow-branch
     // → status:skipped, reason:active_flow. Settings are NOT mutated and
-    // the local file is preserved so a subsequent confirmed call (e.g.
-    // from flow-learn) can complete the merge.
+    // the local file is preserved so a subsequent confirmed call (a
+    // maintainer passing --confirm-on-flow-branch) can complete the merge.
     let dir = tempfile::tempdir().unwrap();
     let (_main_root, worktree) = setup_active_flow_repo(dir.path(), "feat-x");
     let settings_path = setup_settings(
@@ -522,8 +522,8 @@ fn promote_subprocess_active_flow_without_confirm_skips() {
 #[test]
 fn promote_subprocess_active_flow_with_confirm_proceeds() {
     // Active flow + --confirm-on-flow-branch → gate is silent and the
-    // merge runs to completion. This is the path flow-learn Step 4
-    // takes when accumulating session permissions into settings.json.
+    // merge runs to completion. This is the path a maintainer takes
+    // when deliberately promoting session permissions into settings.json.
     let dir = tempfile::tempdir().unwrap();
     let (_main_root, worktree) = setup_active_flow_repo(dir.path(), "feat-x");
     let settings_path = setup_settings(

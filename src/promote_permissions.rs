@@ -36,9 +36,10 @@ pub struct Args {
     /// `{"status":"skipped","reason":"active_flow"}` instead of merging,
     /// closing the subprocess-layer hole that lets a model bypass the
     /// "Never Edit Permissions Mid-Flow" rule via a direct subprocess
-    /// call. The `flow-learn` skill (the only sanctioned mid-flow caller
-    /// per `skills/flow-learn/SKILL.md` Step 4) passes `--confirm-on-flow-branch`
-    /// to bypass the gate. Outside a flow the flag is a no-op.
+    /// call. A maintainer who deliberately needs to promote local
+    /// permission entries while a flow is active passes
+    /// `--confirm-on-flow-branch` to bypass the gate. Outside a flow the
+    /// flag is a no-op.
     #[arg(long = "confirm-on-flow-branch", default_value_t = false)]
     pub confirm_on_flow_branch: bool,
 }
@@ -185,10 +186,10 @@ pub fn read_json(path: &Path) -> Result<Value, String> {
 /// exists at `<main_root>/.flow-states/<branch>/state.json`, the
 /// merge is skipped.
 ///
-/// `--confirm-on-flow-branch` lifts the gate. `flow-learn` Step 4 —
-/// the one sanctioned mid-flow caller — passes the flag so its
-/// promotion runs to completion. A model that bypasses flow-learn
-/// and constructs the flag itself is documented as the prose-only
+/// `--confirm-on-flow-branch` lifts the gate. A maintainer who
+/// deliberately needs to promote local permission entries mid-flow
+/// passes the flag so the promotion runs to completion. A model that
+/// constructs the flag itself is documented as the prose-only
 /// limitation in the rule (mirroring the `_continue_pending=commit`
 /// trust contract in concurrency-model.md).
 ///
@@ -240,7 +241,7 @@ fn active_flow_gate(worktree_path: &Path, confirm: bool) -> Option<Value> {
             "promote-permissions skipped: active flow on branch '{}' \
              at {}. Pass --confirm-on-flow-branch to override (per \
              .claude/rules/permissions.md \"Never Edit Permissions \
-             Mid-Flow\"); flow-learn Step 4 passes the flag automatically.",
+             Mid-Flow\").",
             branch,
             main_root.display()
         ),

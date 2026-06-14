@@ -1,9 +1,9 @@
 ---
 name: flow-complete
-description: "Phase 5: Complete — merge the PR, remove the worktree, and delete the state file. Final phase."
+description: "Phase 4: Complete — merge the PR, remove the worktree, and delete the state file. Final phase."
 ---
 
-# FLOW Complete — Phase 5: Complete
+# FLOW Complete — Phase 4: Complete
 
 ## Usage
 
@@ -77,8 +77,8 @@ confirmation step.
    (strip the `refs/heads/` prefix).
 2. Use the Read tool to read `<project_root>/.flow-states/<branch>/state.json`.
    - If the file exists: extract `feature`, `branch`, `worktree`, `pr_number`,
-     `pr_url`, and `cumulative_seconds`. Check `phases.flow-learn.status` — if
-     not `"complete"`, record warning "Phase 4 not complete (status: <actual status>)."
+     `pr_url`, and `cumulative_seconds`. Check `phases.flow-review.status` — if
+     not `"complete"`, record warning "Phase 3 not complete (status: <actual status>)."
    - If the file does not exist: record warning "No state file found for
      branch '<branch>'."
 
@@ -99,7 +99,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.6.1 — Phase 5: Complete — STARTING
+  FLOW v2.6.1 — Phase 4: Complete — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -645,7 +645,7 @@ status in your response (not via Bash) inside a single fenced code block:
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.6.1 — Phase 5: Complete — COMPLETE (<formatted_time>)
+  ✓ FLOW v2.6.1 — Phase 4: Complete — COMPLETE (<formatted_time>)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 <summary text from format-complete-summary>

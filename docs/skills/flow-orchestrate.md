@@ -10,7 +10,7 @@ parent: Skills
 
 **Usage:** `/flow-orchestrate`
 
-Processes decomposed issues sequentially overnight via `flow-start`. Fetches open issues labeled "Decomposed", filters out in-progress issues, and runs the full Start → Code → Review → Learn → Complete lifecycle for each one. Autonomy comes from the project's `.flow.json` `skills` config — for unattended runs, configure it with the "Fully autonomous" preset from `/flow-prime`. Generates a morning report with results.
+Processes decomposed issues sequentially overnight via `flow-start`. Fetches open issues labeled "Decomposed", filters out in-progress issues, and runs the full Start → Code → Review → Complete lifecycle for each one. Autonomy comes from the project's `.flow.json` `skills` config — for unattended runs, configure it with the "Fully autonomous" preset from `/flow-prime`. Generates a morning report with results.
 
 ---
 
@@ -20,7 +20,7 @@ Processes decomposed issues sequentially overnight via `flow-start`. Fetches ope
 2. Displays a queue table with `Order`, `Issue #`, and `Title` columns sorted by issue number descending, and creates an orchestration state file at `.flow-states/orchestrate.json`
 3. For each issue in the queue:
    - Invokes `flow-start` with the issue number
-   - The full 5-phase lifecycle runs, each phase resolving autonomy from `.flow.json`
+   - The full 4-phase lifecycle runs, each phase resolving autonomy from `.flow.json`
    - Detects the outcome from GitHub PR state (merged = completed, closed = failed)
    - Cleans up stuck features via `flow-abort` if needed
 4. Marks the orchestration complete

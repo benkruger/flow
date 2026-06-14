@@ -73,13 +73,13 @@ CI will fail if a skill directory does not start with `flow-`.
 
 ## State File Updates
 
-**On phase entry (Code, Review, Learn):**
+**On phase entry (Code, Review):**
 
 ```bash
 bin/flow phase-enter --phase <name> --steps-total <n>
 ```
 
-**On phase exit (Start, Code, Review, Learn):**
+**On phase exit (Start, Code, Review):**
 
 ```bash
 bin/flow phase-finalize --phase <name> --branch <branch> --thread-ts <ts>
@@ -123,8 +123,8 @@ Replace `PREV` with the previous phase number and `PREV_NAME` with its name:
 
 ## Sub-Agent Pattern
 
-FLOW uses six custom plugin sub-agents in `agents/*.md`: ci-fixer, reviewer,
-pre-mortem, adversarial, learn-analyst, and documentation. The `PreToolUse`
+FLOW uses five custom plugin sub-agents in `agents/*.md`: ci-fixer, reviewer,
+pre-mortem, adversarial, and documentation. The `PreToolUse`
 hook (`bin/flow hook validate-pretool`) is registered globally in `hooks/hooks.json`,
 enforcing tool restrictions on all Bash calls — including those from
 built-in skills' sub-agents. The hook validates three layers: compound
@@ -140,7 +140,6 @@ Review launches four agents in parallel — reviewer, pre-mortem,
 adversarial, and documentation — for cognitively isolated analysis.
 The parent session gathers context, triages findings, and fixes.
 Code has no sub-agents.
-Learn uses learn-analyst (cognitively isolated compliance audit).
 
 **Code phase rationale:** By the time Code starts, the plan file already
 contains thorough exploration, a validated approach, identified risks,

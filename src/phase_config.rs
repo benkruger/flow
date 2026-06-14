@@ -23,13 +23,7 @@ pub struct PhaseConfig {
 }
 
 /// Phase order constant derived from flow-phases.json.
-pub const PHASE_ORDER: &[&str] = &[
-    "flow-start",
-    "flow-code",
-    "flow-review",
-    "flow-learn",
-    "flow-complete",
-];
+pub const PHASE_ORDER: &[&str] = &["flow-start", "flow-code", "flow-review", "flow-complete"];
 
 /// Build the PHASE_NAMES map.
 pub fn phase_names() -> IndexMap<String, String> {
@@ -37,7 +31,6 @@ pub fn phase_names() -> IndexMap<String, String> {
     m.insert("flow-start".into(), "Start".into());
     m.insert("flow-code".into(), "Code".into());
     m.insert("flow-review".into(), "Review".into());
-    m.insert("flow-learn".into(), "Learn".into());
     m.insert("flow-complete".into(), "Complete".into());
     m
 }
@@ -48,7 +41,6 @@ pub fn commands() -> IndexMap<String, String> {
     m.insert("flow-start".into(), "/flow:flow-start".into());
     m.insert("flow-code".into(), "/flow:flow-code".into());
     m.insert("flow-review".into(), "/flow:flow-review".into());
-    m.insert("flow-learn".into(), "/flow:flow-learn".into());
     m.insert("flow-complete".into(), "/flow:flow-complete".into());
     m
 }
@@ -149,7 +141,6 @@ pub fn build_initial_phases(current_time: &str) -> IndexMap<Phase, PhaseState> {
         Phase::FlowStart,
         Phase::FlowCode,
         Phase::FlowReview,
-        Phase::FlowLearn,
         Phase::FlowComplete,
     ];
     let names = phase_names();

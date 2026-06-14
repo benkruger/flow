@@ -90,11 +90,11 @@ truncation remedy does not bound the read that overflowed. `phase-finalize` gate
 launched, and the recovery is to re-launch that agent.
 
 After agents return, the skill checks each high-investigation agent
-(reviewer, learn-analyst, documentation) for the literal
+(reviewer, documentation) for the literal
 `END-OF-FINDINGS` completion marker. Marker absence means the agent
 was truncated by `maxTurns` exhaustion; the skill re-invokes that
 agent with a narrower partition (file family for documentation,
-tenant family for reviewer/learn-analyst) and combines findings
+tenant family for reviewer) and combines findings
 across the multiple invocations. See
 `.claude/rules/cognitive-isolation.md` "Context Budget + Truncation
 Recovery".
@@ -144,7 +144,7 @@ configurable independently:
 - **continue** — `"auto"` or `"manual"` (default). Controls phase advancement.
 
 In auto mode, findings are auto-fixed and the phase transition advances to
-Learn without asking.
+Complete without asking.
 
 ---
 
@@ -168,6 +168,6 @@ even when the working directory drifted between invocations.
 
 - Code phase must be complete before Review can start
 - `bin/flow ci` must be green after all fixes
-- `bin/flow ci` must be green before transitioning to Learn
+- `bin/flow ci` must be green before transitioning to Complete
 - Can return to Code
 - `bin/flow phase-finalize` refuses to advance with `required_agent_not_returned` when any required agent (`reviewer`, `pre-mortem`, `adversarial`, `documentation`) was never launched — `agents_returned` is written by the `PreToolUse:Agent` hook at launch time. The recovery is to re-launch the missing agent. See `docs/reference/flow-state-schema.md` "Required-Agents Gate" for the JSON contract.

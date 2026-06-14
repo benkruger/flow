@@ -23,26 +23,18 @@ context is a design choice matched to the agent's task:
   path it Reads) plus the plan, CLAUDE.md, and the rule corpus
   inline. Its task is checking against known standards where having
   the standards at hand saves turns.
-- **Context-sparse** (pre-mortem, adversarial, documentation,
-  learn-analyst) — receive the substantive diff as a file path
-  (`git diff -w`, whitespace-only changes filtered) and must
-  investigate the standards themselves. Less context forces
-  independent investigation, surfacing risks and coverage gaps that
+- **Context-sparse** (pre-mortem, adversarial, documentation) —
+  receive the substantive diff as a file path (`git diff -w`,
+  whitespace-only changes filtered) and must investigate the
+  standards themselves. Less context forces independent
+  investigation, surfacing risks and coverage gaps that
   pre-supplied context would mask, and keeps the prompt bounded so a
   large diff cannot overflow it and starve the agent of findings.
   The whitespace filter preserves turn budget on PRs with formatting
   changes. The documentation agent receives a narrowed list of doc
   paths derived from the diff (see `skills/flow-review/SKILL.md`
   Step 1) so its investigation surface stays bounded on
-  moderately-sized PRs. Learn-analyst keeps two small artifacts
-  inline — the state file data (visit counts, timings, session
-  notes) and the plan — but reads CLAUDE.md and the full
-  `.claude/rules/` corpus on demand; it must read the whole corpus
-  rather than a diff-narrowed subset, because a diff under `src/`
-  can violate a prose-authoring rule no path heuristic would
-  surface. The state file data is only meaningful against known
-  process expectations — a high visit count signals friction only
-  if you know the expected count is one.
+  moderately-sized PRs.
 
 This asymmetry is intentional. See `agents/pre-mortem.md` Design
 Note for the full rationale and `agents/reviewer.md` Design Note
@@ -90,11 +82,11 @@ producing analysis. Two levers keep the budget bounded:
 
 ### Completion-marker contract
 
-Every high-investigation agent (reviewer, learn-analyst,
-documentation) declares a literal `## END-OF-FINDINGS` marker as
-the final output of its response. The marker tells the parent
-skill the agent reached the natural end of its analysis rather
-than running out of turns mid-finding.
+Every high-investigation agent (reviewer, documentation) declares
+a literal `## END-OF-FINDINGS` marker as the final output of its
+response. The marker tells the parent skill the agent reached the
+natural end of its analysis rather than running out of turns
+mid-finding.
 
 The marker is a structural contract, not advice. The skill
 detects truncation by **marker absence** rather than by guessing
@@ -104,7 +96,6 @@ from prose shape (mid-sentence ends, missing expected categories)
 A contract test in `tests/skill_contracts.rs` asserts every
 high-investigation agent declares the marker in its Output Format
 section (`reviewer_agent_declares_end_of_findings_marker`,
-`learn_analyst_agent_declares_end_of_findings_marker`,
 `documentation_agent_declares_end_of_findings_marker`). New
 high-investigation agents added to `agents/` MUST declare the
 marker AND extend the contract test with a per-agent sibling.
@@ -179,7 +170,7 @@ Supplement Agent Work From the Parent Session" below) and never
 splits infinitely.
 
 The class is general to high-investigation agents (reviewer,
-learn-analyst, documentation). Phase 3 Review's
+documentation). Phase 3 Review's
 `skills/flow-review/SKILL.md` Step 2 implements it as "Class 0 —
 Read overflow," evaluated before "Class 1 — Truncation."
 
@@ -195,11 +186,10 @@ Three partitions cover the cases observed:
   reviewer).
 - **Split-by-finding-type.** Partition the agent's task by tenant
   or finding category (architecture, simplicity, correctness,
-  security; or for learn-analyst, the three category tenants).
-  Re-invoke once per category with explicit instruction to scope
-  output to that category. Best for agents whose investigation
-  cost scales with the breadth of categories examined (reviewer,
-  learn-analyst).
+  security). Re-invoke once per category with explicit instruction
+  to scope output to that category. Best for agents whose
+  investigation cost scales with the breadth of categories examined
+  (reviewer).
 - **Split-by-phase.** When the diff spans multiple FLOW phases
   (Plan-phase rule changes, Code-phase implementation, Code
   Review-phase agent changes), partition by phase. Best for
@@ -306,15 +296,14 @@ mode that this rule exists to prevent.
 
 ### Why this matters
 
-Cognitive isolation is the design that lets Review (and Learn)
-detect what the parent session missed. The parent built the
-feature; its assessment is biased by the emotional arc of the
-work. The agent is the structural mechanism that breaks the
-bias. The moment the parent does the agent's job, the bias
-returns — the audit trail then shows "agent reviewed X" when
-"parent reviewed X" is what actually happened, and every
-downstream consumer (Learn-phase analyst, post-merge audit,
-human reviewer) is misled.
+Cognitive isolation is the design that lets Review detect what the
+parent session missed. The parent built the feature; its
+assessment is biased by the emotional arc of the work. The agent
+is the structural mechanism that breaks the bias. The moment the
+parent does the agent's job, the bias returns — the audit trail
+then shows "agent reviewed X" when "parent reviewed X" is what
+actually happened, and every downstream consumer (post-merge
+audit, human reviewer) is misled.
 
 The marker alone is not sufficient evidence that the agent did
 its work. An agent can return `## END-OF-FINDINGS` over
@@ -369,15 +358,14 @@ receives the full diff (as a file path it Reads) plus the plan,
 CLAUDE.md, and the rule corpus inline, and returns structured
 findings to the parent session.
 
-The documentation and learn-analyst agents (`agents/documentation.md`,
-`agents/learn-analyst.md`) demonstrate the context-sparse pattern:
-documentation assesses maintainability and documentation drift in
-Review (Phase 3); learn-analyst audits rule compliance and process
-gaps in Learn (Phase 4). Both receive the substantive diff as a file
-path and investigate the standards themselves — learn-analyst reads
-CLAUDE.md and the `.claude/rules/` corpus on demand rather than
-inline. Each agent's prompt states it has no knowledge of the
-conversation that produced the changes.
+The documentation agent (`agents/documentation.md`) demonstrates
+the context-sparse pattern: it assesses maintainability and
+documentation drift in Review (Phase 3). It receives the
+substantive diff as a file path and investigates the standards
+itself — reading CLAUDE.md and the `.claude/rules/` corpus on
+demand via Grep + ranged Read rather than inline. Its prompt
+states it has no knowledge of the conversation that produced the
+changes.
 
 ## Checklist for New Consumers
 

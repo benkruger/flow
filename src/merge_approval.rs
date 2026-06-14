@@ -2,7 +2,7 @@
 //! plus the `bin/flow confirm-merge` subcommand that writes the
 //! marker.
 //!
-//! `flow-complete` is the Phase 5 terminal skill. Its autonomy mode
+//! `flow-complete` is the Phase 4 terminal skill. Its autonomy mode
 //! (`auto` = merge without asking, `manual` = confirm first) is
 //! configured per-project under `skills.flow-complete` and resolved
 //! at runtime via `resolve_skill_mode::resolve`. When the mode is

@@ -31,10 +31,9 @@ When the carve-out applies, the deferral must satisfy ALL of:
    testing, and what command the user must run after merge to
    verify (e.g., manually running the lifecycle from start to
    complete in a fresh Claude Code session against a target
-   project). The log entry serves three readers: Review's
-   reviewer agent (which checks deferral discipline), the Learn
-   analyst (which audits whether the deferral was reasonable),
-   and the user (post-merge action).
+   project). The log entry serves two readers: Review's
+   reviewer agent (which checks deferral discipline) and the
+   user (post-merge action).
 2. **Documented in the commit message body.** The same
    explanation appears in the commit message that lands the
    feature, so a future session reading `git log` sees the
@@ -77,12 +76,10 @@ current session is using:
 **Review phase.** The reviewer agent checks that any
 deferred E2E test has a matching log entry AND commit message
 body entry. A deferral without both is a Real finding fixed in
-Step 4 by adding the missing record.
-
-**Learn phase.** The learn-analyst checks the deferral was
-reasonable: the bootstrapping problem named in the log must be
-real, the post-merge verification command must be runnable by
-the user, and the feature must not be in the
+Step 4 by adding the missing record. The reviewer also confirms
+the deferral was reasonable: the bootstrapping problem named in
+the log must be real, the post-merge verification command must
+be runnable by the user, and the feature must not be in the
 security-sensitive forbidden list.
 
 ## Cross-References

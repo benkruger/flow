@@ -104,7 +104,7 @@ fn complete_fast_errors_when_default_branch_resolve_fails() {
 fn write_state_file(
     repo: &Path,
     branch: &str,
-    learn_status: &str,
+    review_status: &str,
     skills_continue: &str,
 ) -> PathBuf {
     let branch_dir = repo.join(".flow-states").join(branch);
@@ -121,8 +121,7 @@ fn write_state_file(
         "phases": {
             "flow-start": {"status": "complete"},
             "flow-code": {"status": "complete"},
-            "flow-review": {"status": "complete"},
-            "flow-learn": {"status": learn_status},
+            "flow-review": {"status": review_status},
             "flow-complete": {"status": "pending"}
         },
         "skills": {
@@ -283,11 +282,11 @@ struct Fixture {
     stubs: PathBuf,
 }
 
-fn setup(learn_status: &str, skills_continue: &str) -> Fixture {
+fn setup(review_status: &str, skills_continue: &str) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let repo = make_repo_fixture(&parent);
-    write_state_file(&repo, BRANCH, learn_status, skills_continue);
+    write_state_file(&repo, BRANCH, review_status, skills_continue);
     let flow_bin = parent.join("bin-flow-stub").join("flow");
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
@@ -404,7 +403,7 @@ fn non_object_state_returns_corrupt_error() {
 }
 
 #[test]
-fn learn_gate_pending_returns_error() {
+fn review_gate_pending_returns_error() {
     let fx = setup("pending", "auto");
     let output = run_complete_fast(&fx.repo, Some(BRANCH), &fx.flow_bin, &fx.stubs, &[]);
     // status="error" in JSON but exit code is 1 because run_impl returns Ok(error_value).
@@ -412,7 +411,10 @@ fn learn_gate_pending_returns_error() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let json = last_json_line(&stdout);
     assert_eq!(json["status"], "error");
-    assert!(json["message"].as_str().unwrap().contains("Phase 5: Learn"));
+    assert!(json["message"]
+        .as_str()
+        .unwrap()
+        .contains("Phase 3: Review"));
 }
 
 #[test]
@@ -934,7 +936,6 @@ fn no_pr_number_skips_gh_check_and_proceeds() {
             "flow-start": {"status": "complete"},
             "flow-code": {"status": "complete"},
             "flow-review": {"status": "complete"},
-            "flow-learn": {"status": "complete"},
             "flow-complete": {"status": "pending"}
         },
         "skills": {"flow-complete": {"continue": "auto"}}

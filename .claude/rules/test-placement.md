@@ -114,7 +114,7 @@ the mirror rule:
 - `tests/permissions.rs` — permission allow/deny simulation
 - `tests/docs_sync.rs` — docs completeness
 - `tests/opt_out_inventory.rs` — frozen list of bypass comments in the rule corpus
-- `tests/agent_grep_tool_present.rs` — frontmatter contract: every diff-file-handoff agent (the Phase 3 Review agents plus the Phase 4 Learn agent `learn-analyst`) that consumes the diff via DIFF_FILE / SUBSTANTIVE_DIFF_FILE must declare `Grep` in its `tools:` allow-list
+- `tests/agent_grep_tool_present.rs` — frontmatter contract: every diff-file-handoff agent (the Phase 3 Review agents) that consumes the diff via DIFF_FILE / SUBSTANTIVE_DIFF_FILE must declare `Grep` in its `tools:` allow-list
 - `tests/bin_flow.rs` — dispatcher resolution contract for the `bin/flow` bash script; no `src/*.rs` mirror because the subject is a shell script (`tests/bin_<stem>.rs` convention)
 - `tests/bin_reset.rs` — `.flow-states/` wipe contract for the `bin/reset` bash script invoked by `/flow:flow-reset`; no `src/*.rs` mirror because the subject is a shell script (`tests/bin_<stem>.rs` convention)
 - `tests/binary_artifact.rs` — committed-binary contract for `bin/flow-rs-darwin-arm64` (presence, executable git mode, Mach-O arm64); no `src/*.rs` mirror because the subject is a checked-in build artifact

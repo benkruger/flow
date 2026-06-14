@@ -491,7 +491,7 @@ fn capture_diff_no_family_omits_slices_field() {
     assert_eq!(data["status"], "ok");
     assert!(
         data["family_slices"].is_null(),
-        "family_slices must be absent when no --family is passed (byte-compatible with flow-learn's parse)"
+        "family_slices must be absent when no --family is passed (byte-compatible with a no-family caller's parse)"
     );
 }
 

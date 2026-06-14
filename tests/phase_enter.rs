@@ -115,15 +115,6 @@ fn create_state(
                 "cumulative_seconds": 0,
                 "visit_count": 0
             },
-            "flow-learn": {
-                "name": "Learn",
-                "status": "pending",
-                "started_at": null,
-                "completed_at": null,
-                "session_started_at": null,
-                "cumulative_seconds": 0,
-                "visit_count": 0
-            },
             "flow-complete": {
                 "name": "Complete",
                 "status": "pending",
@@ -303,37 +294,6 @@ fn test_review_phase_happy_path() {
 }
 
 #[test]
-fn test_learn_phase_happy_path() {
-    let dir = tempfile::tempdir().unwrap();
-    let branch = "learn-happy";
-    let repo = create_git_repo(dir.path(), branch);
-    create_state(&repo, branch, "flow-review", "complete", None);
-
-    let output = run_phase_enter(
-        &repo,
-        &[
-            "--phase",
-            "flow-learn",
-            "--branch",
-            branch,
-            "--steps-total",
-            "7",
-        ],
-    );
-    assert_eq!(output.status.code(), Some(0));
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-    assert_eq!(data["phase"], "flow-learn");
-
-    // State should have step counters set
-    let state_path = flow_states_dir(&repo).join(branch).join("state.json");
-    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(state["phases"]["flow-learn"]["status"], "in_progress");
-    assert_eq!(state["learn_steps_total"], 7);
-    assert_eq!(state["learn_step"], 0);
-}
-
-#[test]
 fn test_gate_failure_previous_phase_not_complete() {
     let dir = tempfile::tempdir().unwrap();
     let branch = "gate-fail";
@@ -373,7 +333,7 @@ fn test_gate_failure_no_state_file() {
 
 #[test]
 fn test_step_counter_field_names() {
-    // Verify the field name derivation for all 3 applicable phases
+    // Verify the field name derivation for an applicable phase.
     let dir = tempfile::tempdir().unwrap();
 
     // Review: flow-review → review_steps_total, review_step
@@ -400,29 +360,6 @@ fn test_step_counter_field_names() {
     assert_eq!(state["review_step"], 0);
     // Verify the wrong field names are NOT present
     assert!(state.get("flow_review_steps_total").is_none());
-
-    // Learn: flow-learn → learn_steps_total, learn_step
-    let branch2 = "counter-learn";
-    let repo2 = create_git_repo(&dir.path().join("sub"), branch2);
-    create_state(&repo2, branch2, "flow-review", "complete", None);
-    let output2 = run_phase_enter(
-        &repo2,
-        &[
-            "--phase",
-            "flow-learn",
-            "--branch",
-            branch2,
-            "--steps-total",
-            "7",
-        ],
-    );
-    assert_eq!(parse_output(&output2)["status"], "ok");
-    let state2: Value = serde_json::from_str(
-        &fs::read_to_string(repo2.join(".flow-states").join(branch2).join("state.json")).unwrap(),
-    )
-    .unwrap();
-    assert_eq!(state2["learn_steps_total"], 7);
-    assert_eq!(state2["learn_step"], 0);
 }
 
 #[test]
@@ -785,7 +722,7 @@ fn phase_enter_args_clap_derives_covered() {
     let _augmented2 = <Args as _ClapArgsTrait>::augment_args_for_update(base);
     let _gid = <Args as _ClapArgsTrait>::group_id();
     // Exercise FromArgMatches paths (every variant)
-    let mut matches = Args::command().get_matches_from(["phase-enter", "--phase", "flow-learn"]);
+    let mut matches = Args::command().get_matches_from(["phase-enter", "--phase", "flow-review"]);
     let mut a2 = Args::from_arg_matches(&matches).expect("from_arg_matches");
     let _ = a2.update_from_arg_matches(&matches);
     let _ = Args::from_arg_matches_mut(&mut matches);

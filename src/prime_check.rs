@@ -159,7 +159,6 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Agent(flow:ci-fixer)",
     "Agent(flow:cto)",
     "Agent(flow:documentation)",
-    "Agent(flow:learn-analyst)",
     "Agent(flow:pm)",
     "Agent(flow:pre-mortem)",
     "Agent(flow:reviewer)",
@@ -173,7 +172,6 @@ pub const UNIVERSAL_ALLOW: &[&str] = &[
     "Skill(flow:flow-explore)",
     "Skill(flow:flow-hygiene)",
     "Skill(flow:flow-issues)",
-    "Skill(flow:flow-learn)",
     "Skill(flow:flow-note)",
     "Skill(flow:flow-orchestrate)",
     "Skill(flow:flow-plan)",
@@ -329,7 +327,7 @@ pub const FLOW_DENY: &[&str] = &[
 /// worktree does not surface the throwaway probe alongside
 /// intentional changes. The probe lives inside the project's test
 /// tree so the language test runner can discover and execute it;
-/// worktree removal at Phase 5 Complete then disposes of the file
+/// worktree removal at Phase 4 Complete then disposes of the file
 /// as a side effect of removing the worktree directory.
 pub const EXCLUDE_ENTRIES: &[&str] = &[
     ".flow-states/",

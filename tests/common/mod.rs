@@ -348,11 +348,11 @@ pub fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
 /// Build a Complete-phase state JSON value for subprocess test fixtures.
 ///
 /// Returns a `serde_json::Value` describing a state file whose
-/// `flow-start`, `flow-code`, and `flow-review`
-/// phases are `"complete"`, whose `flow-learn` phase has the status
-/// passed in `learn_status` (use `"complete"` for a state that should
-/// pass the Complete-phase Learn gate, or `"pending"` to exercise
-/// gate-failure paths), and whose `flow-complete` phase is
+/// `flow-start` and `flow-code` phases are `"complete"`, whose
+/// `flow-review` phase has the status passed in `review_status` (use
+/// `"complete"` for a state that should pass the Complete-phase
+/// prior-phase gate, or `"pending"` to exercise gate-failure paths),
+/// and whose `flow-complete` phase is
 /// `"pending"`. Also populates `schema_version`, `branch`,
 /// `pr_number` (42), `pr_url`, `prompt`, and `repo` ("test/test") so
 /// downstream commands that read any of these fields find non-empty
@@ -371,7 +371,7 @@ pub fn create_git_repo_with_remote(parent: &Path) -> PathBuf {
 /// `tests/complete_post_merge.rs`) are the named consumers.
 pub fn make_complete_state(
     branch: &str,
-    learn_status: &str,
+    review_status: &str,
     skills_override: Option<Value>,
 ) -> Value {
     let mut state = json!({
@@ -384,8 +384,7 @@ pub fn make_complete_state(
         "phases": {
             "flow-start": {"status": "complete"},
             "flow-code": {"status": "complete"},
-            "flow-review": {"status": "complete"},
-            "flow-learn": {"status": learn_status},
+            "flow-review": {"status": review_status},
             "flow-complete": {"status": "pending"}
         }
     });

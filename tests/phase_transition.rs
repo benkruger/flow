@@ -11,18 +11,11 @@ use indexmap::IndexMap;
 use serde_json::{json, Value};
 
 fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> String {
-    let order = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let order = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let names = [
         ("flow-start", "Start"),
         ("flow-code", "Code"),
         ("flow-review", "Review"),
-        ("flow-learn", "Learn"),
         ("flow-complete", "Complete"),
     ];
     let name_map: std::collections::HashMap<&str, &str> = names.into_iter().collect();
@@ -630,13 +623,11 @@ fn enter_reentry_preserves_started_at() {
 #[test]
 fn enter_flow_complete() {
     let mut state = make_state_value(
-        "flow-learn",
+        "flow-review",
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
-            ("flow-code", "complete"),
             ("flow-review", "complete"),
-            ("flow-learn", "complete"),
         ],
     );
     let result = phase_enter(&mut state, "flow-complete", None);
@@ -964,7 +955,6 @@ fn complete_terminal_phase_auto_next() {
             ("flow-code", "complete"),
             ("flow-code", "complete"),
             ("flow-review", "complete"),
-            ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
     );
@@ -985,7 +975,6 @@ fn complete_flow_complete_with_next_phase() {
             ("flow-code", "complete"),
             ("flow-code", "complete"),
             ("flow-review", "complete"),
-            ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
     );

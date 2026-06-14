@@ -250,11 +250,10 @@ iff ALL THREE conditions hold for the candidate cwd:
    `git commit`). Raw `git commit` is never legitimate during a
    flow even with the marker present.
 2. The state file at `.flow-states/<branch>/state.json` has
-   `_continue_pending == "commit"`. The flow-code, flow-code-
-   review, and flow-learn skills all set this field via
-   `bin/flow set-timestamp` immediately before invoking
-   `/flow:flow-commit`, and `phase_enter()` clears it on phase
-   advance.
+   `_continue_pending == "commit"`. The flow-code and flow-review
+   skills both set this field via `bin/flow set-timestamp`
+   immediately before invoking `/flow:flow-commit`, and
+   `phase_enter()` clears it on phase advance.
 3. `transcript_shows_commit_window_skill(transcript_path, home)`
    returns true — the most recent assistant Skill tool_use call
    since the most recent user turn (resolved by

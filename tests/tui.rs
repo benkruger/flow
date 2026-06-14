@@ -312,11 +312,6 @@ fn make_flow_with_token_snapshots() -> FlowSummary {
                 "completed_at": null, "session_started_at": null,
                 "cumulative_seconds": 0, "visit_count": 0
             },
-            "flow-learn": {
-                "name": "Learn", "status": "pending", "started_at": null,
-                "completed_at": null, "session_started_at": null,
-                "cumulative_seconds": 0, "visit_count": 0
-            },
             "flow-complete": {
                 "name": "Complete", "status": "pending", "started_at": null,
                 "completed_at": null, "session_started_at": null,
@@ -374,11 +369,11 @@ fn test_render_detail_panel_omits_token_table_when_no_data() {
 fn test_render_detail_panel_token_table_breaks_when_viewport_overflows() {
     let mut app = make_app();
     let mut flow = make_flow_with_token_snapshots();
-    // Populate snapshots on every phase so active_rows has 5 entries.
-    // With a small viewport, the loop must break before all 5 land.
+    // Populate snapshots on every phase so active_rows has 4 entries.
+    // With a small viewport, the loop must break before all 4 land.
     let snap_enter = flow.state["phases"]["flow-code"]["window_at_enter"].clone();
     let snap_complete = flow.state["phases"]["flow-code"]["window_at_complete"].clone();
-    for key in ["flow-start", "flow-review", "flow-learn", "flow-complete"] {
+    for key in ["flow-start", "flow-review", "flow-complete"] {
         flow.state["phases"][key]["window_at_enter"] = snap_enter.clone();
         flow.state["phases"][key]["window_at_complete"] = snap_complete.clone();
     }
@@ -1348,31 +1343,17 @@ fn test_list_row_label_review_missing() {
 }
 
 #[test]
-fn test_list_row_label_learn_present() {
-    let c = pc("Learn", 4, 5, 7);
-    assert_eq!(
-        list_row_phase_label(4, "Learn", Some(&c), ""),
-        "4: Learn 5/7"
-    );
-}
-
-#[test]
-fn test_list_row_label_learn_missing() {
-    assert_eq!(list_row_phase_label(4, "Learn", None, ""), "4: Learn");
-}
-
-#[test]
 fn test_list_row_label_complete_present() {
-    let c = pc("Complete", 5, 4, 6);
+    let c = pc("Complete", 4, 4, 6);
     assert_eq!(
-        list_row_phase_label(5, "Complete", Some(&c), ""),
-        "5: Complete 4/6"
+        list_row_phase_label(4, "Complete", Some(&c), ""),
+        "4: Complete 4/6"
     );
 }
 
 #[test]
 fn test_list_row_label_complete_missing() {
-    assert_eq!(list_row_phase_label(5, "Complete", None, ""), "5: Complete");
+    assert_eq!(list_row_phase_label(4, "Complete", None, ""), "4: Complete");
 }
 
 #[test]

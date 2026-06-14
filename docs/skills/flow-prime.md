@@ -56,14 +56,13 @@ The chosen configuration is stored in `.flow.json` under a `skills` key:
     "flow-start": {"continue": "auto"},
     "flow-code": {"commit": "auto", "continue": "auto"},
     "flow-review": {"commit": "auto", "continue": "auto"},
-    "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": {"continue": "manual"},
     "flow-complete": {"continue": "manual"}
   }
 }
 ```
 
-Every skill's config is an object. Phase skills that commit (Code, Review, Learn) carry both axes — `{"commit": ..., "continue": ...}`. Phase skills that don't commit (Start) and the utility skills (Abort, Complete) carry only the continue axis — `{"continue": ...}`.
+Every skill's config is an object. Phase skills that commit (Code, Review) carry both axes — `{"commit": ..., "continue": ...}`. Phase skills that don't commit (Start) and the utility skills (Abort, Complete) carry only the continue axis — `{"continue": ...}`.
 
 `.flow.json` is the single source of truth for skill autonomy: each skill resolves its mode from its `skills.<skill>` config via `resolve-skill-mode`. There are no `--auto`/`--manual` invocation flags.
 

@@ -21,8 +21,8 @@ fn test_phases_has_1_through_5() {
     let order = data["order"].as_array().expect("missing 'order' array");
     assert_eq!(
         order.len(),
-        5,
-        "Expected 5 phases in order, got {}",
+        4,
+        "Expected 4 phases in order, got {}",
         order.len()
     );
     let phases = data["phases"].as_object().expect("missing 'phases' object");
@@ -34,7 +34,7 @@ fn test_phases_has_1_through_5() {
             key
         );
     }
-    assert_eq!(phases.len(), 5);
+    assert_eq!(phases.len(), 4);
 }
 
 #[test]
@@ -648,7 +648,6 @@ fn test_all_agents_specify_model() {
         ("adversarial.md", "opus"),
         ("reviewer.md", "opus"),
         ("pre-mortem.md", "opus"),
-        ("learn-analyst.md", "opus"),
         ("documentation.md", "sonnet"),
         ("pm.md", "haiku"),
         ("tech-lead.md", "sonnet"),
@@ -781,7 +780,7 @@ fn test_checksum_version_invariant() {
 /// The Review adversarial probe at `tests/test_adversarial_flow.rs`
 /// is an ephemeral file: the adversarial agent writes it during the
 /// Review phase, and `src/cleanup.rs::delete_adversarial_probe` removes it
-/// from the worktree at Phase 5 Complete. The path is excluded from
+/// from the worktree at Phase 4 Complete. The path is excluded from
 /// staging via the `test_adversarial_flow.*` pattern in
 /// `src/prime_check.rs::EXCLUDE_ENTRIES`.
 ///
@@ -811,7 +810,7 @@ fn adversarial_probe_must_not_be_tracked() {
         "tests/test_adversarial_flow.rs must not be tracked by git. \
          The file is the Review adversarial probe — it is \
          written ephemerally during the Review phase and disposed of by \
-         `src/cleanup.rs::delete_adversarial_probe` at Phase 5. \
+         `src/cleanup.rs::delete_adversarial_probe` at Phase 4. \
          A tracked stub or committed probe defeats the cleanup. \
          Found in git ls-files: {}",
         stdout.trim()

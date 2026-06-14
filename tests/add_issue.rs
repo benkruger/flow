@@ -39,7 +39,7 @@ fn run_add_issue(repo: &Path, args: &[&str]) -> Output {
 fn add_issue_records_entry_in_state() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    let state = json!({"branch": "b", "current_phase": "flow-learn", "issues_filed": []});
+    let state = json!({"branch": "b", "current_phase": "flow-code", "issues_filed": []});
     let state_path = write_state(&repo, "b", &state);
 
     let output = run_add_issue(
@@ -52,7 +52,7 @@ fn add_issue_records_entry_in_state() {
             "--url",
             "https://github.com/o/r/issues/1",
             "--phase",
-            "flow-learn",
+            "flow-code",
             "--branch",
             "b",
         ],
@@ -74,8 +74,8 @@ fn add_issue_records_entry_in_state() {
     assert_eq!(issues[0]["label"], "Rule");
     assert_eq!(issues[0]["title"], "Test rule");
     assert_eq!(issues[0]["url"], "https://github.com/o/r/issues/1");
-    assert_eq!(issues[0]["phase"], "flow-learn");
-    assert_eq!(issues[0]["phase_name"], "Learn");
+    assert_eq!(issues[0]["phase"], "flow-code");
+    assert_eq!(issues[0]["phase_name"], "Code");
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn add_issue_no_state_file_returns_no_state() {
             "--url",
             "u",
             "--phase",
-            "flow-learn",
+            "flow-code",
             "--branch",
             "missing",
         ],
@@ -108,7 +108,7 @@ fn add_issue_creates_issues_filed_array_if_missing() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
     // State has no issues_filed key at all.
-    let state = json!({"branch": "c", "current_phase": "flow-learn"});
+    let state = json!({"branch": "c", "current_phase": "flow-code"});
     let state_path = write_state(&repo, "c", &state);
 
     let output = run_add_issue(
@@ -121,7 +121,7 @@ fn add_issue_creates_issues_filed_array_if_missing() {
             "--url",
             "https://github.com/benkruger/flow/issues/10",
             "--phase",
-            "flow-learn",
+            "flow-code",
             "--branch",
             "c",
         ],
@@ -138,7 +138,7 @@ fn add_issue_appends_to_existing_list() {
     let repo = create_git_repo_with_remote(dir.path());
     let state = json!({
         "branch": "d",
-        "current_phase": "flow-learn",
+        "current_phase": "flow-code",
         "issues_filed": [{"label": "Prior", "title": "Existing"}]
     });
     let state_path = write_state(&repo, "d", &state);
@@ -153,7 +153,7 @@ fn add_issue_appends_to_existing_list() {
             "--url",
             "https://x/y/issues/2",
             "--phase",
-            "flow-learn",
+            "flow-code",
             "--branch",
             "d",
         ],
@@ -174,7 +174,7 @@ fn add_issue_appends_to_existing_list() {
 fn add_issue_unknown_phase_falls_back_to_raw_name() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    let state = json!({"branch": "u", "current_phase": "flow-learn", "issues_filed": []});
+    let state = json!({"branch": "u", "current_phase": "flow-code", "issues_filed": []});
     let state_path = write_state(&repo, "u", &state);
 
     let output = run_add_issue(
@@ -218,7 +218,7 @@ fn add_issue_no_branch_no_git_returns_branch_resolution_error() {
             "--url",
             "u",
             "--phase",
-            "flow-learn",
+            "flow-code",
         ])
         .current_dir(dir.path())
         .env("CLAUDE_PLUGIN_ROOT", env!("CARGO_MANIFEST_DIR"))
@@ -259,7 +259,7 @@ fn add_issue_corrupt_state_returns_error() {
             "--url",
             "u",
             "--phase",
-            "flow-learn",
+            "flow-code",
             "--branch",
             "bad",
         ],
@@ -283,7 +283,7 @@ fn make_state_lib(branch: &str) -> Value {
     json!({
         "schema_version": 1,
         "branch": branch,
-        "current_phase": "flow-learn",
+        "current_phase": "flow-code",
         "issues_filed": []
     })
 }
@@ -301,7 +301,7 @@ fn make_args(branch: Option<&str>) -> Args {
         label: "Rule".to_string(),
         title: "test-title".to_string(),
         url: "https://github.com/owner/repo/issues/1".to_string(),
-        phase: "flow-learn".to_string(),
+        phase: "flow-code".to_string(),
         branch: branch.map(|s| s.to_string()),
     }
 }
@@ -314,7 +314,7 @@ fn add_issue_to_empty_array_lib() {
 
     let result = mutate_state(&path, &mut |s| {
         let names = phase_names();
-        let phase = "flow-learn";
+        let phase = "flow-code";
         let phase_name = names.get(phase).cloned().unwrap_or_default();
         s["issues_filed"]
             .as_array_mut()
@@ -333,7 +333,7 @@ fn add_issue_to_empty_array_lib() {
     let issues = result["issues_filed"].as_array().unwrap();
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0]["label"], "Rule");
-    assert_eq!(issues[0]["phase_name"], "Learn");
+    assert_eq!(issues[0]["phase_name"], "Code");
     assert!(issues[0]["timestamp"].as_str().unwrap().contains("T"));
 }
 
@@ -366,13 +366,13 @@ fn add_issue_creates_array_if_missing_lib() {
     let branch_dir = root.join(".flow-states").join("test-feature");
     fs::create_dir_all(&branch_dir).unwrap();
     let path = branch_dir.join("state.json");
-    fs::write(&path, r#"{"current_phase": "flow-learn"}"#).unwrap();
+    fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
 
     let args = Args {
         label: "Flaky Test".to_string(),
         title: "test".to_string(),
         url: "https://example.com/1".to_string(),
-        phase: "flow-learn".to_string(),
+        phase: "flow-code".to_string(),
         branch: Some("test-feature".to_string()),
     };
 
@@ -398,7 +398,7 @@ fn add_issue_array_root_state_noop_lib() {
         label: "Rule".to_string(),
         title: "should not appear".to_string(),
         url: "https://example.com/1".to_string(),
-        phase: "flow-learn".to_string(),
+        phase: "flow-code".to_string(),
         branch: Some("test-feature".to_string()),
     };
 
@@ -431,7 +431,7 @@ fn add_issue_run_impl_main_success_returns_issue_count_tuple() {
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        r#"{"current_phase":"flow-learn","issues_filed":[]}"#,
+        r#"{"current_phase":"flow-code","issues_filed":[]}"#,
     )
     .unwrap();
     let args = make_args(Some("present-branch"));
@@ -467,7 +467,7 @@ fn add_issue_run_impl_main_unknown_phase_falls_back_to_phase_string() {
     let state_path = branch_dir.join("state.json");
     fs::write(
         &state_path,
-        r#"{"current_phase":"flow-learn","issues_filed":[]}"#,
+        r#"{"current_phase":"flow-code","issues_filed":[]}"#,
     )
     .unwrap();
     let mut args = make_args(Some("unknown-phase"));
@@ -490,7 +490,7 @@ fn add_issue_run_impl_main_wrong_type_resets_to_array() {
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        r#"{"current_phase":"flow-learn","issues_filed":"not-an-array"}"#,
+        r#"{"current_phase":"flow-code","issues_filed":"not-an-array"}"#,
     )
     .unwrap();
     let args = make_args(Some("wrong-type"));

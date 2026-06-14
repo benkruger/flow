@@ -2,13 +2,13 @@
 
 ## You Don't Understand This Code Yet. Read This Before You Change Anything.
 
-**What.** FLOW is a Claude Code plugin (`flow:` namespace) that enforces an opinionated 5-phase development lifecycle: Start, Code, Review, Learn, Complete. Each phase is a Skill (markdown) Claude reads and follows. Phase gates prevent skipping ahead. Language-agnostic — every project owns its toolchain via repo-local `bin/format`, `bin/lint`, `bin/build`, `bin/test` scripts that FLOW orchestrates.
+**What.** FLOW is a Claude Code plugin (`flow:` namespace) that enforces an opinionated 4-phase development lifecycle: Start, Code, Review, Complete. Each phase is a Skill (markdown) Claude reads and follows. Phase gates prevent skipping ahead. Language-agnostic — every project owns its toolchain via repo-local `bin/format`, `bin/lint`, `bin/build`, `bin/test` scripts that FLOW orchestrates.
 
 This repo is the plugin source code. When installed in a target project, skills and hooks run in the target project's working directory, not here. State files, worktrees, and logs all live in the target project. If you are developing FLOW itself, you are modifying the plugin — not using it.
 
 **Why.** LLM agents lack engineering discipline by default. We skip verification, rationalize shortcuts, commit half-finished work, bypass safety mechanisms when the gate feels inconvenient, and reach for deletion when we don't understand unfamiliar code. FLOW makes Claude Code usable on real software by enforcing the discipline structurally — hooks, gates, state files, contract tests — rather than relying on the model's self-discipline, which doesn't hold across sessions. The four tenets below (Unobtrusive, configurable autonomy, safe in local env, N×N×N concurrent) follow from that goal.
 
-**How.** Defense in depth, five layers: rules (`.claude/rules/*.md` prose the model reads) → skills (`skills/<name>/SKILL.md` executable phase instructions) → hooks (`hooks/hooks.json` → `bin/flow hook <name>` PreToolUse blocks that exit-2 invalid tool calls) → `bin/flow` Rust subcommands (own every state mutation and gate decision; the model never computes timestamps or counters) → contract tests (lock invariants so refactors can't drift them). The 5-phase lifecycle (table below) runs over this scaffolding, with state at `.flow-states/<branch>/state.json` and worktrees at `.worktrees/<branch>/` so N engineers × N flows × N machines never collide.
+**How.** Defense in depth, five layers: rules (`.claude/rules/*.md` prose the model reads) → skills (`skills/<name>/SKILL.md` executable phase instructions) → hooks (`hooks/hooks.json` → `bin/flow hook <name>` PreToolUse blocks that exit-2 invalid tool calls) → `bin/flow` Rust subcommands (own every state mutation and gate decision; the model never computes timestamps or counters) → contract tests (lock invariants so refactors can't drift them). The 4-phase lifecycle (table below) runs over this scaffolding, with state at `.flow-states/<branch>/state.json` and worktrees at `.worktrees/<branch>/` so N engineers × N flows × N machines never collide.
 
 **The discipline this anchors.** Every piece of FLOW infrastructure — every hook, gate, state mutation, cleanup step, transcript walker, carve-out — exists to prevent a specific failure mode. The code does not look familiar because the failure modes are not familiar; they are the patterns of LLM agents working unattended on production code. The reflex to remove or simplify unfamiliar FLOW code IS the failure mode this project exists to prevent.
 
@@ -30,15 +30,14 @@ Four core tenets:
 3. **Safe for local env** — no containers, no permission prompts ever, native tools only.
 4. **N×N×N concurrent** — N engineers running N flows on N boxes simultaneously is the primary use case.
 
-## The 5 Phases
+## The 4 Phases
 
 | Phase | Name | Command | Purpose |
 |-------|------|---------|---------|
 | 1 | Start | `/flow:flow-start` | Under the start lock, bring the base branch to a green-CI + dependency-current baseline, then fork the worktree and open the PR — see "Start-Gate CI on the Base Branch as Serialization Point" below |
 | 2 | Code | `/flow:flow-code` | Execute plan tasks one at a time with TDD |
 | 3 | Review | `/flow:flow-review` | Six tenants assessed by four cognitively isolated agents (reviewer, pre-mortem, adversarial, documentation) |
-| 4 | Learn | `/flow:flow-learn` | Capture learnings, route to permanent homes |
-| 5 | Complete | `/flow:flow-complete` | Merge PR, remove worktree, delete state file |
+| 4 | Complete | `/flow:flow-complete` | Merge PR, remove worktree, delete state file |
 
 ## Start-Gate CI on the Base Branch as Serialization Point
 
@@ -104,7 +103,7 @@ Behavior I obey lives in the rule files below. Reading the rule when relevant be
 - **Tombstone tests** — see `.claude/rules/tombstone-tests.md`.
 - **100% coverage gate** (pinned, never lowered, no waivers) — see `.claude/rules/no-waivers.md`.
 - **Test placement** (`tests/<path>/<name>.rs` mirrors `src/<path>/<name>.rs`, no inline `#[cfg(test)]`) — see `.claude/rules/test-placement.md`.
-- **Cognitive isolation** of Review/Learn sub-agents — see `.claude/rules/cognitive-isolation.md`.
+- **Cognitive isolation** of Review sub-agents — see `.claude/rules/cognitive-isolation.md`.
 
 Module-level doc comments in `src/*.rs` describe each file's purpose. Discover via Glob/Grep/Read when relevant — do not pre-load.
 
@@ -113,7 +112,7 @@ Module-level doc comments in `src/*.rs` describe each file's purpose. Discover v
 Permanent on-main artifacts that future-session readers should know about by name + one-line purpose. Architecture detail lives in each artifact's module doc comment.
 
 - `src/hooks/agent_prompt_scan.rs` — scans Agent tool prompts for out-of-worktree path tokens during active flows and blocks the Agent call before a sub-agent Read would surface a permission prompt.
-- `src/hooks/agent_run_record.rs` — PreToolUse:Agent recorder; when a required Review/Learn sub-agent is launched it records the run into `phases.<phase>.agents_returned` (the Agent launch is unforgeable evidence the model cannot fabricate), so `phase-finalize`'s required-agents gate reads `agents_returned` alone.
+- `src/hooks/agent_run_record.rs` — PreToolUse:Agent recorder; when a required Review sub-agent is launched it records the run into `phases.<phase>.agents_returned` (the Agent launch is unforgeable evidence the model cannot fabricate), so `phase-finalize`'s required-agents gate reads `agents_returned` alone.
 - `src/pricing.rs` — model→per-token USD price table; `cost_for(model, &ModelTokens)` derives per-phase and month-to-date cost from captured token counts, so cost has one source and one capture instant.
 - `bin/flow write-session-cost` (`src/write_session_cost.rs`) — SessionStart hook subcommand that writes the active session's token-derived cost to `.claude/cost/<YYYY-MM>/<session_id>` so month-to-date spend reconciles with the token counts.
 - `src/wait_for_release_ci.rs` — `bin/flow wait-for-release-ci` polls the latest integration-branch GitHub Actions run for the current HEAD with a bounded real-sleep loop until it reaches a terminal conclusion, so flow-release reads the CI result from a single bounded command.

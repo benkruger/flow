@@ -694,7 +694,7 @@ fn compute_config_hash_uses_python_default_formatter() {
     // produced by the in-tree constants and formatter at the time the
     // test was authored. Update it together with any intentional change
     // to UNIVERSAL_ALLOW / FLOW_DENY / EXCLUDE_ENTRIES / hash format.
-    const CURRENT_CONFIG_HASH: &str = "13a4d6c6ca9e";
+    const CURRENT_CONFIG_HASH: &str = "315a854ffba2";
     assert_eq!(
         hash, CURRENT_CONFIG_HASH,
         "config_hash drift — PythonDefaultFormatter or input constants changed; \

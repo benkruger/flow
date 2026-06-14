@@ -19,7 +19,7 @@ one disposing phase. For the adversarial probe:
   invalidates the probe's assertions, the probe is reconciled per
   `.claude/rules/adversarial-probe-lifecycle.md` — either deleted
   (default) or updated to assert the post-fix invariant.
-- **Phase 5 Complete disposes.** The cleanup orchestrator
+- **Phase 4 Complete disposes.** The cleanup orchestrator
   (`src/cleanup.rs::delete_adversarial_probe`) explicitly removes
   the probe file from the worktree via `fs::remove_file` before
   the worktree directory itself is removed.

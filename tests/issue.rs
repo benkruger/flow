@@ -1241,7 +1241,7 @@ fn gate_allows_in_learn_phase_with_stubbed_gh() {
     // spawns gh. With no gh on PATH the spawn fails, but what matters
     // here is the gate pass — the failure appears in the returned
     // error, not as a Review block.
-    let state = || Some(r#"{"current_phase":"flow-learn"}"#.to_string());
+    let state = || Some(r#"{"current_phase":"flow-code"}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, _code) = run_impl_main(default_args(), &state, &repo);
     // gate pass proven by absence of Review message.
@@ -1309,7 +1309,7 @@ fn gate_fails_closed_when_state_has_bom() {
 
 #[test]
 fn gate_fails_closed_when_state_has_bom_and_no_review() {
-    let state = || Some("\u{feff}{\"current_phase\":\"flow-learn\"}".to_string());
+    let state = || Some("\u{feff}{\"current_phase\":\"flow-code\"}".to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
@@ -1371,7 +1371,7 @@ fn gate_blocks_when_current_phase_has_trailing_nul() {
 #[test]
 fn gate_blocks_when_current_phase_duplicate_key_serde_last_wins() {
     let state =
-        || Some(r#"{"current_phase":"flow-review","current_phase":"flow-learn"}"#.to_string());
+        || Some(r#"{"current_phase":"flow-review","current_phase":"flow-code"}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);
@@ -1381,7 +1381,7 @@ fn gate_blocks_when_current_phase_duplicate_key_serde_last_wins() {
 #[test]
 fn gate_blocks_when_duplicate_key_in_reverse_order() {
     let state =
-        || Some(r#"{"current_phase":"flow-learn","current_phase":"flow-review"}"#.to_string());
+        || Some(r#"{"current_phase":"flow-code","current_phase":"flow-review"}"#.to_string());
     let repo = || Some("owner/name".to_string());
     let (value, code) = run_impl_main(default_args(), &state, &repo);
     assert_eq!(code, 1);

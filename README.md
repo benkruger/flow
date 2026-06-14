@@ -1,8 +1,8 @@
 # FLOW — Software Development Lifecycle for Claude Code
 
-An opinionated 5-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces issue-driven, TDD discipline on every feature. Language-agnostic — every project owns its toolchain via `bin/format`, `bin/lint`, `bin/build`, `bin/test` stubs that FLOW orchestrates.
+An opinionated 4-phase development plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that enforces issue-driven, TDD discipline on every feature. Language-agnostic — every project owns its toolchain via `bin/format`, `bin/lint`, `bin/build`, `bin/test` stubs that FLOW orchestrates.
 
-**Every feature. Same 5 phases. Same order. No shortcuts.**
+**Every feature. Same 4 phases. Same order. No shortcuts.**
 
 **Documentation:** [benkruger.github.io/flow](https://benkruger.github.io/flow)
 
@@ -10,7 +10,7 @@ An opinionated 5-phase development plugin for [Claude Code](https://docs.anthrop
 
 ## Why FLOW
 
-Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then four-agent code review, then learnings that compound. Every feature, same order.
+Claude Code is powerful, but undisciplined by default. FLOW imposes structure. Not bureaucracy — discipline. DAG decomposition for planning, then TDD execution, then four-agent code review, then a clean merge. Every feature, same order.
 
 ---
 
@@ -52,12 +52,12 @@ You type three commands. FLOW handles the rest.
 /flow-start #1234
 ```
 
-### The five phases that run after `/flow-start`
+### The four phases that run after `/flow-start`
 
-Once `/flow-start` lands, you're inside the lifecycle. Each phase is its own skill, but **you don't type them** — Claude auto-chains Code → Review → Learn → Complete based on your `.flow.json` autonomy settings. You see them as phase transitions, and as approval prompts at any boundary you've kept `continue: manual`.
+Once `/flow-start` lands, you're inside the lifecycle. Each phase is its own skill, but **you don't type them** — Claude auto-chains Code → Review → Complete based on your `.flow.json` autonomy settings. You see them as phase transitions, and as approval prompts at any boundary you've kept `continue: manual`.
 
 ```text
-1: Start  →  2: Code  →  3: Review  →  4: Learn  →  5: Complete
+1: Start  →  2: Code  →  3: Review  →  4: Complete
 ```
 
 | Phase | Command | What happens |
@@ -65,8 +65,7 @@ Once `/flow-start` lands, you're inside the lifecycle. Each phase is its own ski
 | **1: Start** | `/flow-start` | Acquire start lock, run `bin/flow ci` baseline on the integration branch, upgrade dependencies, commit, unlock, then create worktree + PR. `ci-fixer` sub-agent repairs any dependency breakage once; subsequent flows inherit the fix via the CI sentinel. Plan is extracted from the issue body's `<!-- FLOW-PLAN-BEGIN -->`/`<!-- FLOW-PLAN-END -->` sentinels. |
 | **2: Code** | `/flow-code` | Test-first per task, diff review before `bin/flow ci`, commit per task, 100% coverage enforced. |
 | **3: Review** | `/flow-review` | Four cognitively isolated agents in parallel — `reviewer`, `pre-mortem`, `adversarial`, `documentation`. Parent triages findings and fixes in-scope issues. |
-| **4: Learn** | `/flow-learn` | Learnings routed to project `CLAUDE.md` and `.claude/rules/`; plugin process gaps filed as GitHub issues. |
-| **5: Complete** | `/flow-complete` | Merge the PR, close issues referenced in the prompt, remove the worktree, delete the state file. |
+| **4: Complete** | `/flow-complete` | Merge the PR, close issues referenced in the prompt, remove the worktree, delete the state file. |
 
 Maintainer-only commands (private to this repo): `/flow-qa` files a pre-decomposed QA issue against the FLOW plugin repo for end-to-end lifecycle regression testing; `/flow-release` ships a tagged version; `/flow-changelog-audit` reviews Claude Code's CHANGELOG for plugin-relevant changes.
 
@@ -117,7 +116,6 @@ Four preset levels:
     "flow-start": {"continue": "manual"},
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-review": {"commit": "auto", "continue": "auto"},
-    "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-complete": "auto"
   }
@@ -254,7 +252,7 @@ Review launches four cognitively isolated agents in parallel:
 - **`adversarial`** (context-sparse) — writes tests designed to break the implementation.
 - **`documentation`** (context-sparse) — assesses maintainability and documentation accuracy.
 
-The parent session gathers context, triages findings, and fixes in-scope issues. Learn uses `learn-analyst` (cognitively isolated compliance audit). Planning skills can dispatch to `pm` / `tech-lead` / `cto` agents for scope-bound voices. Start uses `ci-fixer` when CI on the integration branch fails.
+The parent session gathers context, triages findings, and fixes in-scope issues. Planning skills can dispatch to `pm` / `tech-lead` / `cto` agents for scope-bound voices. Start uses `ci-fixer` when CI on the integration branch fails.
 
 ```text
 Main conversation          Sub-agent (custom plugin)
@@ -283,23 +281,6 @@ Every Claude Code session start — new terminal, `/clear`, `/compact` — trigg
 
 The hook also handles timing recovery (resets interrupted session timing so cumulative phase durations stay accurate), compaction recovery (consumes `compact_summary` and `compact_cwd` for richer context after `/compact`), correction capture (injects the instruction to invoke `/flow-note` whenever the user corrects Claude), and deterministic terminal tab colors per repo.
 
-### The learning system
-
-Every correction and observation has a path to becoming a permanent, reusable pattern:
-
-```text
-User corrects Claude → /flow-note captures it in state["notes"]
-Claude writes observations → auto-memory (shared across worktrees)
-       ↓
-Learn reads CLAUDE.md, rules, plan, state notes, and diff in Phase 4
-       ↓
-Each learning is routed to the right repo-local destination:
-    → Project CLAUDE.md   (process rules and architecture — committed via PR)
-    → Project rules       (coding anti-patterns and gotchas — committed via PR)
-```
-
-The learnings don't evaporate at session end. They compound.
-
 ### Slack notifications (optional)
 
 Thread-per-feature notifications give your team passive awareness of feature progress. Each feature gets one Slack thread — every phase posts a reply, building a narrative from start to merge. Set two env vars, run `/flow-prime`, done. See [Slack Integration](docs/integrations/slack.md).
@@ -314,7 +295,6 @@ Every completed feature produces:
 - Individual commits per plan task with detailed messages
 - 100% test coverage maintained
 - All identified risks addressed (verified by Review phase)
-- New `CLAUDE.md` patterns and rules from corrections and learnings
 - A clean state file (deleted at Complete)
 
 ---

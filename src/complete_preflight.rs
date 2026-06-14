@@ -1,6 +1,6 @@
 //! Complete phase preflight — shared functions and standalone subcommand.
 //!
-//! Provides `resolve_mode`, `check_learn_phase`, `check_pr_status`,
+//! Provides `resolve_mode`, `check_review_phase`, `check_pr_status`,
 //! `merge_main`, and `run_cmd_with_timeout` — reused by `complete-fast`
 //! and available as a standalone subcommand for backward compatibility.
 //!
@@ -146,16 +146,16 @@ pub fn resolve_mode(state: Option<&Value>) -> String {
     }
 }
 
-/// Check if Learn phase is complete. Returns list of warning strings.
-pub fn check_learn_phase(state: &Value) -> Vec<String> {
-    let learn_status = state
+/// Check if the Review phase is complete. Returns list of warning strings.
+pub fn check_review_phase(state: &Value) -> Vec<String> {
+    let review_status = state
         .get("phases")
-        .and_then(|p| p.get("flow-learn"))
+        .and_then(|p| p.get("flow-review"))
         .and_then(|l| l.get("status"))
         .and_then(|s| s.as_str())
         .unwrap_or("pending");
-    if learn_status != "complete" {
-        vec![format!("Phase 5 not complete (status: {}).", learn_status)]
+    if review_status != "complete" {
+        vec![format!("Phase 3 not complete (status: {}).", review_status)]
     } else {
         Vec::new()
     }
@@ -373,7 +373,7 @@ fn load_state_file(state_path: &Path) -> Result<(Option<Value>, bool), Value> {
 fn compute_preflight_metadata(state: Option<&Value>) -> (String, Vec<String>) {
     let mode = resolve_mode(state);
     let warnings = match state {
-        Some(s) => check_learn_phase(s),
+        Some(s) => check_review_phase(s),
         None => Vec::new(),
     };
     (mode, warnings)

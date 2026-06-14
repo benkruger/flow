@@ -44,7 +44,6 @@ fn make_test_state() -> Value {
             "flow-start": {"name": "Start", "status": "in_progress", "started_at": "2026-01-01T00:00:00Z", "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 1},
             "flow-code": {"name": "Code", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-review": {"name": "Review", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
-            "flow-learn": {"name": "Learn", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-complete": {"name": "Complete", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0}
         }
     })
@@ -62,7 +61,6 @@ fn minimal_complete_state(feature: &str) -> Value {
             "flow-start":        {"status": "complete", "cumulative_seconds": 10, "visit_count": 1},
             "flow-code":         {"status": "complete", "cumulative_seconds": 30, "visit_count": 1},
             "flow-review":  {"status": "complete", "cumulative_seconds": 40, "visit_count": 1},
-            "flow-learn":        {"status": "complete", "cumulative_seconds": 50, "visit_count": 1},
             "flow-complete":     {"status": "pending"}
         },
         "findings": [],
@@ -108,7 +106,6 @@ fn timings_table_started_only_filters() {
     assert!(table.contains("| Start |"));
     assert!(table.contains("| Code |"));
     assert!(!table.contains("| Review |"));
-    assert!(!table.contains("| Learn |"));
     assert!(!table.contains("| Complete |"));
     assert!(table.contains("| **Total** |"));
 }
@@ -163,7 +160,6 @@ fn full_cost_state() -> Value {
     add_phase_snapshots(&mut state, "flow-start", 0, 5);
     add_phase_snapshots(&mut state, "flow-code", 5, 15);
     add_phase_snapshots(&mut state, "flow-review", 15, 20);
-    add_phase_snapshots(&mut state, "flow-learn", 20, 25);
     add_phase_snapshots(&mut state, "flow-complete", 25, 30);
     state
 }
@@ -186,7 +182,7 @@ fn cost_table_renders_header_and_separator() {
 fn cost_table_renders_per_phase_rows() {
     let state = full_cost_state();
     let table = format_cost_table(&state);
-    for name in ["Start", "Code", "Review", "Learn", "Complete"] {
+    for name in ["Start", "Code", "Review", "Complete"] {
         assert!(
             table.contains(&format!("| {} |", name)),
             "phase row for {} missing; table:\n{}",
@@ -720,7 +716,7 @@ fn full_state() {
         "label": "Tech Debt",
         "title": "Test issue",
         "url": "https://github.com/test/test/issues/1",
-        "phase_name": "Learn"
+        "phase_name": "Review"
     }]);
 
     let body = render_body(&state, dir.path()).unwrap();
@@ -741,7 +737,7 @@ fn with_issues() {
         "label": "Rule",
         "title": "Add rule X",
         "url": "https://github.com/test/test/issues/5",
-        "phase_name": "Learn"
+        "phase_name": "Review"
     }]);
 
     let dir = tempfile::tempdir().unwrap();
@@ -837,8 +833,6 @@ fn phase_timings_shows_started_only() {
     assert!(body.contains("| Start |"));
     assert!(body.contains("| Code |"));
     assert!(body.contains("| Review |"));
-    assert!(!body.contains("| Learn |"));
-    assert!(!body.contains("| Learn |"));
     let timings_start = body.find("## Phase Timings").unwrap();
     let timings_end = body.find("<!-- end:Phase Timings -->").unwrap();
     let timings_section = &body[timings_start..timings_end];
@@ -868,7 +862,7 @@ fn section_order() {
         "label": "Tech Debt",
         "title": "Issue",
         "url": "https://github.com/t/t/issues/1",
-        "phase_name": "Learn"
+        "phase_name": "Review"
     }]);
 
     let body = render_body(&state, dir.path()).unwrap();
@@ -963,7 +957,7 @@ fn render_body_token_cost_section_order_invariant() {
         "label": "Tech Debt",
         "title": "Issue",
         "url": "https://github.com/t/t/issues/1",
-        "phase_name": "Learn"
+        "phase_name": "Review"
     }]);
 
     let body = render_body(&state, dir.path()).unwrap();
@@ -1128,10 +1122,10 @@ fn session_log_as_directory_propagates_error() {
 
 // --- render_body Findings sections integration ---
 //
-// `render_body` calls `format_findings_markdown` twice (once per phase)
-// and splices the resulting `## Review Findings` and `## Learn Findings`
-// sections between the Token Cost block (or Phase Timings when Token
-// Cost is absent) and the State File block.
+// `render_body` calls `format_findings_markdown` for the Review phase
+// and splices the resulting `## Review Findings` section between the
+// Token Cost block (or Phase Timings when Token Cost is absent) and the
+// State File block.
 
 /// Helper: build a fixture with snapshot data so Token Cost renders,
 /// plus a configurable findings array.
@@ -1150,11 +1144,6 @@ fn render_body_omits_findings_sections_when_findings_empty() {
     assert!(
         !body.contains("## Review Findings"),
         "Review Findings must NOT appear when findings empty; body:\n{}",
-        body
-    );
-    assert!(
-        !body.contains("## Learn Findings"),
-        "Learn Findings must NOT appear when findings empty; body:\n{}",
         body
     );
 }
@@ -1177,11 +1166,6 @@ fn render_body_renders_review_findings_when_only_review_present() {
         "Review Findings section must appear; body:\n{}",
         body
     );
-    assert!(
-        !body.contains("## Learn Findings"),
-        "Learn Findings must NOT appear when no learn findings; body:\n{}",
-        body
-    );
 
     let cost_pos = body
         .find("## Token Cost")
@@ -1193,81 +1177,6 @@ fn render_body_renders_review_findings_when_only_review_present() {
     assert!(
         cost_pos < review_pos && review_pos < state_pos,
         "Review Findings must sit between Token Cost and State File; body:\n{}",
-        body
-    );
-}
-
-#[test]
-fn render_body_renders_learn_findings_when_only_learn_present() {
-    let state = full_cost_state_with_findings(json!([
-        {
-            "finding": "Missing rule for X",
-            "reason": "Identified during analysis",
-            "outcome": "rule_written",
-            "phase": "flow-learn",
-        }
-    ]));
-    let dir = tempfile::tempdir().unwrap();
-    let body = render_body(&state, dir.path()).unwrap();
-
-    assert!(
-        body.contains("## Learn Findings"),
-        "Learn Findings section must appear; body:\n{}",
-        body
-    );
-    assert!(
-        !body.contains("## Review Findings"),
-        "Review Findings must NOT appear when no review findings; body:\n{}",
-        body
-    );
-
-    let cost_pos = body
-        .find("## Token Cost")
-        .expect("Token Cost section position");
-    let learn_pos = body
-        .find("## Learn Findings")
-        .expect("Learn Findings section position");
-    let state_pos = body.find("## State File").expect("State File position");
-    assert!(
-        cost_pos < learn_pos && learn_pos < state_pos,
-        "Learn Findings must sit between Token Cost and State File; body:\n{}",
-        body
-    );
-}
-
-#[test]
-fn render_body_renders_both_sections_in_order_when_both_present() {
-    let state = full_cost_state_with_findings(json!([
-        {
-            "finding": "Bug in parser",
-            "reason": "Fixed inline",
-            "outcome": "fixed",
-            "phase": "flow-review",
-        },
-        {
-            "finding": "Missing rule",
-            "reason": "Created new rule",
-            "outcome": "rule_written",
-            "phase": "flow-learn",
-        },
-    ]));
-    let dir = tempfile::tempdir().unwrap();
-    let body = render_body(&state, dir.path()).unwrap();
-
-    let cost_pos = body
-        .find("## Token Cost")
-        .expect("Token Cost section position");
-    let review_pos = body
-        .find("## Review Findings")
-        .expect("Review Findings section position");
-    let learn_pos = body
-        .find("## Learn Findings")
-        .expect("Learn Findings section position");
-    let state_pos = body.find("## State File").expect("State File position");
-
-    assert!(
-        cost_pos < review_pos && review_pos < learn_pos && learn_pos < state_pos,
-        "Order must be Token Cost < Review Findings < Learn Findings < State File; body:\n{}",
         body
     );
 }

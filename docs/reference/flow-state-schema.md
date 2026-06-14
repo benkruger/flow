@@ -53,7 +53,6 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
     "flow-start": {"continue": "manual"},
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-review": {"commit": "auto", "continue": "auto"},
-    "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": {"continue": "auto"},
     "flow-complete": {"continue": "auto"}
   },
@@ -119,11 +118,9 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `review_steps_total` | integer | Total number of Review steps (hardcoded 4). Set via `set-timestamp` after phase entry. Used by the TUI for "step N of M" display |
 | `code_tasks_total` | integer / absent | Total number of implementation tasks from the plan. Set by Phase 1 (Start) Step 5 via `set-timestamp`, derived from a count of `#### Task N:` headings in the extracted `plan.md` (returned by `bin/flow plan-from-issue` in its success envelope as `tasks_total`). Used by the TUI to show "task 3 of 8" in the Code phase annotation. Absent in state files created before v0.40 |
 | `code_task_name` | string / absent | Short description of the current Code task from the plan. Set by Phase 2 (Code) via `set-timestamp` before each task starts. Used by the TUI to show "Update tests - task 2 of 3" in the Code phase annotation. Absent when Code phase is not in progress or in state files created before the feature was added |
-| `learn_step` | integer | Highest completed Learn step (0-6), per-step monotonic. Each Step N for N in 1-6 writes `learn_step=N` at its END via `set-timestamp`; the Resume Check maps value N to "resume at Step N+1" (0 or absent starts at Step 1). Step 7 is terminal and writes no counter, so 6 is the maximum value. TUI displays `learn_step + 1` as the current step. Used for resume and TUI annotation "gathering sources - step 1 of 7" |
-| `learn_steps_total` | integer | Total number of Learn phase steps (hardcoded 7). Set via `set-timestamp` after phase entry. Used by the TUI for "step N of M" display |
 | `complete_step` | integer | Current Complete phase step (1-5). Set by Rust commands at each step boundary. Used by the TUI to show "merging PR - step 4 of 5" and as resume point for CI gate loops |
 | `complete_steps_total` | integer | Total number of Complete phase steps (hardcoded 5). Set by `complete-fast` or `complete-preflight` after phase entry. Used by the TUI for "step N of M" display |
-| `_continue_pending` | string | Child skill or action currently executing. Phase skills set this before invoking a child skill so the Stop hook (`bin/flow hook stop-continue`) blocks the turn from ending and forces continuation. Values are either a child skill name (e.g. `decompose`) or the action `commit` (used by flow-code, flow-review, flow-learn, and flow-complete when invoking `/flow:flow-commit`). Cleared in three places: by the Stop hook after forcing continuation, by `finalize-commit` on error (to prevent blind phase advancement after a failed commit — conflict status is preserved for retry), and by `phase_enter()` on phase entry (to prevent stale flags from a previous phase). Empty string or absent means no continuation pending. |
+| `_continue_pending` | string | Child skill or action currently executing. Phase skills set this before invoking a child skill so the Stop hook (`bin/flow hook stop-continue`) blocks the turn from ending and forces continuation. Values are either a child skill name (e.g. `decompose`) or the action `commit` (used by flow-code, flow-review, and flow-complete when invoking `/flow:flow-commit`). Cleared in three places: by the Stop hook after forcing continuation, by `finalize-commit` on error (to prevent blind phase advancement after a failed commit — conflict status is preserved for retry), and by `phase_enter()` on phase entry (to prevent stale flags from a previous phase). Empty string or absent means no continuation pending. |
 | `_continue_context` | string | Specific next-step instructions for the model after a child skill returns. Written by phase skills before `_continue_pending`, read and cleared by the Stop hook. Also cleared by `finalize-commit` on error and by `phase_enter()` on phase entry (same lifecycle as `_continue_pending`). Included in the block reason so the model knows what to do after the turn boundary. Empty string or absent means use the generic fallback message. |
 | `_blocked` | ISO 8601 / null | Timestamp when the flow was blocked on AskUserQuestion. Set by PreToolUse hook (`bin/flow hook validate-ask-user`) when allowing a prompt through. Cleared by PostToolUse hook (`bin/flow clear-blocked`) after user responds and by Stop hook (`bin/flow hook stop-continue`) as a safety net for crashed sessions. Transient. |
 | `_last_failure` | object / null | API error context from the last StopFailure event. Contains `type` (string — error category, e.g. `rate_limit`, `auth_failure`, `network_timeout`), `message` (string — error details), and `timestamp` (ISO 8601 — when the failure occurred). Written by StopFailure hook (`bin/flow hook stop-failure`). Currently has no consumer (session-start consumer removed in PR #938). Transient. |
@@ -135,14 +132,14 @@ The frozen phases file is a snapshot of `flow-phases.json` taken at start time. 
 | `notes` | array | Corrections captured via `/flow-note` — see [Notes Array](#notes-array) |
 | `phase_transitions` | array | Phase entry log recording every `phase_enter()` call with from/to/timestamp and optional reason — see [Phase Transitions Array](#phase-transitions-array) |
 | `issues_filed` | array | GitHub issues filed during the feature — see [Issues Filed Array](#issues-filed-array) |
-| `findings` | array | Triage findings from Review and Learn phases — see [Findings Array](#findings-array) |
+| `findings` | array | Triage findings from the Review phase — see [Findings Array](#findings-array) |
 | `compact_summary` | string / null | Conversation summary from last compaction. Written by PostCompact hook. Currently has no consumer (session-start consumer removed in PR #938). Transient. |
 | `compact_cwd` | string / null | CWD at last compaction time. Written by PostCompact hook. Currently has no consumer (session-start consumer removed in PR #938). Transient. |
 | `compact_count` | integer | Total number of context compactions during this feature. Incremented by PostCompact hook. Permanent. |
 | `slack_thread_ts` | string / null | Slack message timestamp of the initial thread message. Set by Start phase after first `notify-slack` call. Used by subsequent phases as `thread_ts` to reply in the same thread. Null or absent if Slack is not configured. |
 | `slack_notifications` | array | Slack notifications sent during the feature — see [Slack Notifications Array](#slack-notifications-array) |
 | `window_at_start` | object / absent | Account-window snapshot captured at flow-start. See [Window Snapshot](#window-snapshot). Absent when not yet populated or when capture failed. |
-| `window_at_complete` | object / absent | Account-window snapshot captured at Phase 5 finalize. See [Window Snapshot](#window-snapshot). Absent until Complete runs. |
+| `window_at_complete` | object / absent | Account-window snapshot captured at Phase 4 finalize. See [Window Snapshot](#window-snapshot). Absent until Complete runs. |
 
 ---
 
@@ -161,8 +158,8 @@ Each phase entry has identical fields regardless of status.
 | `visit_count` | integer | Number of times this phase has been entered |
 | `window_at_enter` | object / absent | Account-window snapshot captured on phase entry. See [Window Snapshot](#window-snapshot). Absent until phase entry runs or when capture failed. |
 | `window_at_complete` | object / absent | Account-window snapshot captured on phase finalize. See [Window Snapshot](#window-snapshot). Absent until phase finalize runs. |
-| `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`code_task`, `review_step`, `learn_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
-| `agents_returned` | array / absent | Review-only and Learn-only. Entries of `{agent: string, timestamp: ISO 8601}` appended by the `PreToolUse:Agent` hook (`src/hooks/agent_run_record.rs`) when a required Review/Learn sub-agent is launched. The Agent tool launch is itself the evidence the agent ran — only a real Agent tool call reaches the hook, so a model cannot fabricate the record by synthesizing a CLI invocation. Set-semantics: each required agent appears at most once. Absent on every phase except `flow-review` / `flow-learn`, and absent until the first required agent is launched. Consumed by `phase-finalize`'s required-agents gate — see below. |
+| `step_snapshots` | array | Array of [Step Snapshots](#step-snapshot) appended on each step-counter increment (`code_task`, `review_step`, `complete_step`). Empty until the phase begins incrementing its step counter. Bounded by step count per phase (typically <30 entries; up to ~10 KB for a long Code phase). |
+| `agents_returned` | array / absent | Review-only. Entries of `{agent: string, timestamp: ISO 8601}` appended by the `PreToolUse:Agent` hook (`src/hooks/agent_run_record.rs`) when a required Review sub-agent is launched. The Agent tool launch is itself the evidence the agent ran — only a real Agent tool call reaches the hook, so a model cannot fabricate the record by synthesizing a CLI invocation. Set-semantics: each required agent appears at most once. Absent on every phase except `flow-review`, and absent until the first required agent is launched. Consumed by `phase-finalize`'s required-agents gate — see below. |
 
 ### Required-Agents Gate
 
@@ -171,7 +168,6 @@ against the per-phase `REQUIRED_AGENTS` constant
 (`src/required_agents.rs`):
 
 - `flow-review` requires `{reviewer, pre-mortem, adversarial, documentation}`
-- `flow-learn` requires `{learn-analyst}`
 - All other phases have no required agents and bypass this gate
 
 The gate computes `missing = required \ returned` and refuses the
@@ -226,7 +222,7 @@ Copied from `.flow.json` into the state file by `/flow-start`. Phase skills read
 
 Present only when `.flow.json` contains a `skills` key (i.e., after running `/flow-prime` with Customize or a preset). Phase skills that don't find a `skills` key in the state file fall back to built-in defaults.
 
-Each value is an **object** with per-axis settings. `/flow-prime` normalizes every entry to the object shape before writing `.flow.json`, so `/flow-start` copies object-shaped entries into the state file for all six skills. The committing phase skills — `flow-code`, `flow-review`, `flow-learn` — carry both a commit axis (per-task commit approval) and a continue axis (phase transition approval): `{"commit": ..., "continue": ...}`. The single-axis skills — `flow-start`, `flow-abort`, `flow-complete` — carry only the continue axis: `{"continue": ...}`. The shared `resolve-skill-mode` subcommand reads `commit` and `continue` from the object and is the single resolution path for all six skills.
+Each value is an **object** with per-axis settings. `/flow-prime` normalizes every entry to the object shape before writing `.flow.json`, so `/flow-start` copies object-shaped entries into the state file for all five skills. The committing phase skills — `flow-code`, `flow-review` — carry both a commit axis (per-task commit approval) and a continue axis (phase transition approval): `{"commit": ..., "continue": ...}`. The single-axis skills — `flow-start`, `flow-abort`, `flow-complete` — carry only the continue axis: `{"continue": ...}`. The shared `resolve-skill-mode` subcommand reads `commit` and `continue` from the object and is the single resolution path for all five skills.
 
 The object shape is represented in Rust as `SkillConfig::Detailed(IndexMap<String, String>)` in `src/state.rs`; `SkillConfig::Simple(String)` remains as a tolerated parse for a hand-edited bare-string entry, and the `validate-ask-user` PreToolUse hook accepts either shape by checking `Value::as_str() == Some("auto")` OR `Value::get("continue").and_then(|c| c.as_str()) == Some("auto")`.
 
@@ -235,7 +231,6 @@ The object shape is represented in Rust as `SkillConfig::Detailed(IndexMap<Strin
   "flow-start": {"continue": "manual"},
   "flow-code": {"commit": "manual", "continue": "manual"},
   "flow-review": {"commit": "auto", "continue": "auto"},
-  "flow-learn": {"commit": "auto", "continue": "auto"},
   "flow-abort": {"continue": "auto"},
   "flow-complete": {"continue": "auto"}
 }
@@ -273,7 +268,7 @@ These entries are **descriptive** — they record where the artifacts live so co
 ## Notes Array
 
 Populated throughout the session by `/flow-note`. Survives compaction
-and session restarts. Read by Learn as a primary source.
+and session restarts.
 
 ```json
 "notes": [
@@ -292,7 +287,7 @@ and session restarts. Read by Learn as a primary source.
 ## Phase Transitions Array
 
 Populated by `phase_enter()` on every phase entry. Records the journey
-through phases, enabling the Learn phase to identify rework patterns.
+through phases, surfacing rework patterns in the TUI timeline.
 
 ```json
 "phase_transitions": [
@@ -319,11 +314,11 @@ via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
 ```json
 "issues_filed": [
   {
-    "label": "Rule",
-    "title": "Add rule: never use git checkout for file ops",
+    "label": "Tech Debt",
+    "title": "Refactor parser error paths",
     "url": "https://github.com/org/repo/issues/42",
-    "phase": "flow-learn",
-    "phase_name": "Learn",
+    "phase": "flow-review",
+    "phase_name": "Review",
     "timestamp": "2026-03-12T10:00:00-07:00"
   }
 ]
@@ -334,7 +329,7 @@ via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
 | `label` | string | Issue category: Rule, Tech Debt, or Documentation Drift |
 | `title` | string | Issue title as filed on GitHub |
 | `url` | string | Full GitHub issue URL |
-| `phase` | string | Phase key where the issue was filed (e.g. `"flow-learn"`) |
+| `phase` | string | Phase key where the issue was filed (e.g. `"flow-review"`) |
 | `phase_name` | string | Human-readable phase name |
 | `timestamp` | ISO 8601 | When the issue was filed |
 
@@ -342,10 +337,10 @@ via `bin/flow issue`. Surfaced in the Complete phase PR body and Done banner.
 
 ## Findings Array
 
-Populated by `bin/flow add-finding` during Review (Phase 4) and Learn
-(Phase 5) triage. Each entry records a finding, its triage outcome, and the
-reasoning. Rendered in the Complete phase Done banner as "Review Findings"
-and "Learn Findings" sections.
+Populated by `bin/flow add-finding` during Review (Phase 3) triage.
+Each entry records a finding, its triage outcome, and the reasoning.
+Rendered in the Complete phase Done banner as the "Review Findings"
+section.
 
 ```json
 "findings": [
@@ -358,12 +353,11 @@ and "Learn Findings" sections.
     "timestamp": "2026-03-12T10:30:00-07:00"
   },
   {
-    "finding": "No rule for error handling pattern",
-    "reason": "Gap identified during learn analysis",
-    "outcome": "rule_written",
-    "phase": "flow-learn",
-    "phase_name": "Learn",
-    "path": ".claude/rules/error-handling.md",
+    "finding": "Missing test for the empty-input branch",
+    "reason": "Real gap — added a regression test in Step 4",
+    "outcome": "fixed",
+    "phase": "flow-review",
+    "phase_name": "Review",
     "timestamp": "2026-03-12T10:45:00-07:00"
   }
 ]
@@ -374,7 +368,7 @@ and "Learn Findings" sections.
 | `finding` | string | Description of what was found |
 | `reason` | string | Why this outcome was chosen |
 | `outcome` | string | Triage outcome: `fixed`, `dismissed`, `filed`, `rule_written`, or `rule_clarified` |
-| `phase` | string | Phase key where the finding was triaged (e.g. `"flow-review"`, `"flow-learn"`) |
+| `phase` | string | Phase key where the finding was triaged (e.g. `"flow-review"`) |
 | `phase_name` | string | Human-readable phase name |
 | `timestamp` | ISO 8601 | When the finding was recorded |
 | `issue_url` | string (optional) | GitHub issue URL — present when outcome is `filed` |
@@ -492,7 +486,7 @@ A single entry inside the `by_model` object — present only when at least one `
 
 ## Step Snapshot
 
-Appended to a phase's `step_snapshots[]` on every step-counter increment that names one of the four recognized counters: `code_task`, `review_step`, `learn_step`, `complete_step`. Each entry combines the counter value at the time of capture, the field name, and a flattened [Window Snapshot](#window-snapshot) — so each record is one flat JSON object rather than a nested `{snapshot: {...}}` shape.
+Appended to a phase's `step_snapshots[]` on every step-counter increment that names one of the three recognized counters: `code_task`, `review_step`, `complete_step`. Each entry combines the counter value at the time of capture, the field name, and a flattened [Window Snapshot](#window-snapshot) — so each record is one flat JSON object rather than a nested `{snapshot: {...}}` shape.
 
 ```json
 {
@@ -514,7 +508,7 @@ Appended to a phase's `step_snapshots[]` on every step-counter increment that na
 | Field | Type | Description |
 |-------|------|-------------|
 | `step` | integer | Counter value at capture time |
-| `field` | string | Counter name (one of `code_task`, `review_step`, `learn_step`, `complete_step`) |
+| `field` | string | Counter name (one of `code_task`, `review_step`, `complete_step`) |
 | _flattened snapshot fields_ | various | Every [Window Snapshot](#window-snapshot) field, inlined at the same level |
 
 ---
@@ -562,7 +556,7 @@ The directory is removed with the rest of `.flow-states/<branch>/` by
 
 ## Merge-Approval Marker
 
-When `flow-complete` is configured `manual`, the Phase 5 squash-merge
+When `flow-complete` is configured `manual`, the Phase 4 squash-merge
 is gated: it must not run without an explicit user confirmation. The
 "proceed" half is a branch-scoped, single-use approval marker at:
 

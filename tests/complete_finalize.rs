@@ -297,7 +297,7 @@ fn finalize_with_broken_flow_stubs_populates_post_merge_failures() {
 /// no subsequent code path may resurrect it. The pre-cleanup
 /// "starting" log line still fires while the branch directory
 /// exists, but its file is removed alongside the branch directory.
-/// The cleanup-side audit trail (the `[Phase 5] cleanup — in progress`
+/// The cleanup-side audit trail (the `[Phase 4] cleanup — in progress`
 /// line) is covered by `tests/cleanup.rs` tests against the cleanup
 /// module directly, and the cleanup result is always available to
 /// callers via the JSON `cleanup` envelope `complete_finalize`
@@ -547,7 +547,6 @@ fn complete_finalize_heals_non_object_flow_complete_without_panic() {
             "flow-start": {"status": "complete"},
             "flow-code": {"status": "complete"},
             "flow-review": {"status": "complete"},
-            "flow-learn": {"status": "complete"},
             "flow-complete": "stringified-phase-state",
         },
     });

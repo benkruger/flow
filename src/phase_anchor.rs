@@ -21,7 +21,7 @@
 //!
 //! The marker is per-session (filename carries `session_id`) so
 //! concurrent N×N×N flows never collide. `phase-enter` overwrites it on
-//! every entry; Phase 5 Complete cleanup deletes it. A new session that
+//! every entry; Phase 4 Complete cleanup deletes it. A new session that
 //! cannot resolve a session id writes no marker — the resolver then
 //! falls back to today's cwd-based branch detection (graceful
 //! degradation), mirroring the utility-marker skip behavior.

@@ -1,5 +1,5 @@
 //! Tests for `src/hooks/agent_run_record.rs` — the PreToolUse:Agent
-//! recorder that writes a required Review/Learn agent into
+//! recorder that writes a required Review agent into
 //! `phases.<phase>.agents_returned` when the model launches the agent.
 //!
 //! Two execution modes per `.claude/rules/tests-guard-real-regressions.md`:
@@ -95,34 +95,12 @@ fn record_agent_run_records_reviewer_on_in_progress_review() {
 }
 
 #[test]
-fn record_agent_run_records_learn_analyst_on_in_progress_learn() {
-    let (_d, worktree, state_path) = fixture("feat", &state_for("flow-learn", "in_progress"));
-    record_agent_run(Some(&worktree), Some("flow:learn-analyst"));
-    assert_eq!(
-        returned_agents(&state_path, "flow-learn"),
-        vec!["learn-analyst".to_string()],
-        "a flow:learn-analyst launch during in-progress flow-learn must record learn-analyst"
-    );
-}
-
-#[test]
 fn record_agent_run_ignores_non_required_subagent_type() {
     let (_d, worktree, state_path) = fixture("feat", &state_for("flow-review", "in_progress"));
     record_agent_run(Some(&worktree), Some("flow:ci-fixer"));
     assert!(
         returned_agents(&state_path, "flow-review").is_empty(),
         "a non-required subagent (ci-fixer) must not record into a required-agent phase"
-    );
-}
-
-#[test]
-fn record_agent_run_ignores_subagent_for_other_phase() {
-    // learn-analyst is required for flow-learn, not flow-review.
-    let (_d, worktree, state_path) = fixture("feat", &state_for("flow-review", "in_progress"));
-    record_agent_run(Some(&worktree), Some("flow:learn-analyst"));
-    assert!(
-        returned_agents(&state_path, "flow-review").is_empty(),
-        "an agent required by a different phase must not record into the current phase"
     );
 }
 

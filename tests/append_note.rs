@@ -118,7 +118,7 @@ fn append_note_default_type_is_correction() {
 fn append_note_learning_type_accepted() {
     let dir = tempfile::tempdir().unwrap();
     let repo = create_git_repo_with_remote(dir.path());
-    let state = json!({"branch": "l", "current_phase": "flow-learn", "notes": []});
+    let state = json!({"branch": "l", "current_phase": "flow-code", "notes": []});
     let state_path = write_state(&repo, "l", &state);
 
     let output = run_append_note(
@@ -361,8 +361,8 @@ fn append_note_preserves_existing_lib() {
 fn read_current_phase_success_lib() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state.json");
-    fs::write(&path, r#"{"current_phase": "flow-learn"}"#).unwrap();
-    assert_eq!(read_current_phase(&path), Some("flow-learn".to_string()));
+    fs::write(&path, r#"{"current_phase": "flow-code"}"#).unwrap();
+    assert_eq!(read_current_phase(&path), Some("flow-code".to_string()));
 }
 
 #[test]

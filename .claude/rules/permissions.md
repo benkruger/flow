@@ -348,12 +348,11 @@ the gate returns:
 ```
 
 The local settings file is preserved across the skip so a
-confirmed retry (typically from `flow-learn` Step 4, the only
-sanctioned mid-flow caller) completes the merge.
+confirmed retry (by a caller that passes `--confirm-on-flow-branch`)
+completes the merge.
 
-The `--confirm-on-flow-branch` flag is the bypass. `flow-learn`
-Step 4 passes it; any other caller documenting a legitimate
-mid-flow promotion must do the same.
+The `--confirm-on-flow-branch` flag is the bypass. Any caller
+documenting a legitimate mid-flow promotion must pass it.
 
 ## Shared Config Files — Express User Permission Required
 

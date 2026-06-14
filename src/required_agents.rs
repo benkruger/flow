@@ -18,13 +18,10 @@
 /// the `<name>` portion of a `subagent_type: "flow:<name>"` invocation
 /// in the phase's SKILL.md. Agent names are stored lowercase so a
 /// `normalize_gate_input`-normalized `flow:<name>` comparison matches.
-pub const REQUIRED_AGENTS: &[(&str, &[&str])] = &[
-    (
-        "flow-review",
-        &["reviewer", "pre-mortem", "adversarial", "documentation"],
-    ),
-    ("flow-learn", &["learn-analyst"]),
-];
+pub const REQUIRED_AGENTS: &[(&str, &[&str])] = &[(
+    "flow-review",
+    &["reviewer", "pre-mortem", "adversarial", "documentation"],
+)];
 
 /// Return the required-agent slice for `phase`, or an empty slice when
 /// the phase has no required agents (e.g. flow-start, flow-code,

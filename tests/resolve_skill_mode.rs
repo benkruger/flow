@@ -185,14 +185,6 @@ fn resolve_entry_array_falls_back() {
     assert_mode(&state, "flow-complete", "manual", "manual");
 }
 
-/// `flow-learn` is the one skill whose per-skill default is fully
-/// autonomous — a missing entry resolves both axes to `auto`.
-#[test]
-fn resolve_flow_learn_default_is_auto() {
-    let state = json!({});
-    assert_mode(&state, "flow-learn", "auto", "auto");
-}
-
 /// Every skill resolves from its own `skills.<skill>` block entry.
 #[test]
 fn resolve_each_skill_reads_its_own_entry() {
@@ -200,7 +192,6 @@ fn resolve_each_skill_reads_its_own_entry() {
         "flow-start",
         "flow-code",
         "flow-review",
-        "flow-learn",
         "flow-complete",
         "flow-abort",
     ] {
@@ -333,15 +324,6 @@ fn run_impl_missing_state_file_falls_back() {
     assert_eq!(v["status"], "ok");
     assert_eq!(v["commit"], "manual");
     assert_eq!(v["continue"], "manual");
-}
-
-#[test]
-fn run_impl_missing_state_file_flow_learn_default_auto() {
-    let tmp = tempfile::tempdir().unwrap();
-    let v = run_impl(&args("flow-learn", "feature"), tmp.path());
-    assert_eq!(v["status"], "ok");
-    assert_eq!(v["commit"], "auto");
-    assert_eq!(v["continue"], "auto");
 }
 
 #[test]

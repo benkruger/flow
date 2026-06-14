@@ -207,15 +207,6 @@ fn status_valid_state_exits_0() {
                 "cumulative_seconds": 0,
                 "visit_count": 0,
             },
-            "flow-learn": {
-                "name": "Learn",
-                "status": "pending",
-                "started_at": null,
-                "completed_at": null,
-                "session_started_at": null,
-                "cumulative_seconds": 0,
-                "visit_count": 0,
-            },
             "flow-complete": {
                 "name": "Complete",
                 "status": "pending",
@@ -444,7 +435,6 @@ fn format_status_valid_state_exits_0() {
             "flow-start": {"name": "Start", "status": "complete", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 60, "visit_count": 1},
             "flow-code": {"name": "Code", "status": "in_progress", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 1},
             "flow-review": {"name": "Review", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
-            "flow-learn": {"name": "Learn", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-complete": {"name": "Complete", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
         }
     });
@@ -509,7 +499,6 @@ fn format_status_branch_flag() {
             "flow-start": {"name": "Start", "status": "complete", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 60, "visit_count": 1},
             "flow-code": {"name": "Code", "status": "in_progress", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 1},
             "flow-review": {"name": "Review", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
-            "flow-learn": {"name": "Learn", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
             "flow-complete": {"name": "Complete", "status": "pending", "started_at": null, "completed_at": null, "session_started_at": null, "cumulative_seconds": 0, "visit_count": 0},
         }
     });

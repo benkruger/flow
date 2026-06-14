@@ -14,7 +14,7 @@ use std::process::{Command, Output};
 use serde_json::{json, Value};
 
 use flow_rs::complete_preflight::{
-    check_learn_phase, check_pr_status, fold_cmd_result, merge_main, resolve_mode,
+    check_pr_status, check_review_phase, fold_cmd_result, merge_main, resolve_mode,
     run_cmd_with_timeout,
 };
 
@@ -103,7 +103,7 @@ esac
     );
 }
 
-fn write_state_file(repo: &Path, branch: &str, learn_status: &str) -> PathBuf {
+fn write_state_file(repo: &Path, branch: &str, review_status: &str) -> PathBuf {
     let branch_dir = repo.join(".flow-states").join(branch);
     fs::create_dir_all(&branch_dir).unwrap();
     let state_path = branch_dir.join("state.json");
@@ -113,7 +113,7 @@ fn write_state_file(repo: &Path, branch: &str, learn_status: &str) -> PathBuf {
         "pr_number": 42,
         "pr_url": "https://github.com/test/test/pull/42",
         "phases": {
-            "flow-learn": {"status": learn_status},
+            "flow-review": {"status": review_status},
         },
     });
     fs::write(&state_path, serde_json::to_string_pretty(&state).unwrap()).unwrap();
@@ -244,11 +244,11 @@ struct Fixture {
     stubs: PathBuf,
 }
 
-fn setup(learn_status: &str) -> Fixture {
+fn setup(review_status: &str) -> Fixture {
     let dir = tempfile::tempdir().unwrap();
     let parent = dir.path().canonicalize().unwrap();
     let repo = make_repo_fixture(&parent);
-    write_state_file(&repo, BRANCH, learn_status);
+    write_state_file(&repo, BRANCH, review_status);
     let flow_bin = parent.join("bin-flow-stub").join("flow");
     write_flow_stub(&flow_bin);
     let stubs = build_path_stubs(&parent);
@@ -309,23 +309,23 @@ fn resolve_mode_no_state_falls_back_manual() {
 }
 
 #[test]
-fn check_learn_phase_pending_returns_warning() {
-    let state = json!({"phases": {"flow-learn": {"status": "pending"}}});
-    let w = check_learn_phase(&state);
+fn check_review_phase_pending_returns_warning() {
+    let state = json!({"phases": {"flow-review": {"status": "pending"}}});
+    let w = check_review_phase(&state);
     assert_eq!(w.len(), 1);
-    assert!(w[0].contains("Phase 5 not complete"));
+    assert!(w[0].contains("Phase 3 not complete"));
 }
 
 #[test]
-fn check_learn_phase_complete_no_warnings() {
-    let state = json!({"phases": {"flow-learn": {"status": "complete"}}});
-    assert!(check_learn_phase(&state).is_empty());
+fn check_review_phase_complete_no_warnings() {
+    let state = json!({"phases": {"flow-review": {"status": "complete"}}});
+    assert!(check_review_phase(&state).is_empty());
 }
 
 #[test]
-fn check_learn_phase_missing_phases_returns_warning() {
+fn check_review_phase_missing_phases_returns_warning() {
     let state = json!({});
-    let w = check_learn_phase(&state);
+    let w = check_review_phase(&state);
     assert_eq!(w.len(), 1);
 }
 
@@ -966,7 +966,7 @@ fn complete_preflight_merge_base_resolved_by_git() {
             "branch": BRANCH,
             "pr_number": 42,
             "pr_url": "https://github.com/test/test/pull/42",
-            "phases": {"flow-learn": {"status": "complete"}},
+            "phases": {"flow-review": {"status": "complete"}},
         })
         .to_string(),
     )

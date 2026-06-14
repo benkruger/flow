@@ -150,8 +150,8 @@ against the process cwd at write time.
 **Pass-through for non-managed paths.** When the basename isn't in
 the set above (e.g., `.claude/rules/<topic>.md`, `CLAUDE.md`,
 arbitrary user-named files), the gate is silent and write-rule writes
-the path verbatim. This is the path the `flow-learn` rule-routing
-pattern depends on.
+the path verbatim. This is the path the rule-routing pattern depends
+on.
 
 **Pass-through for branch-unavailable contexts.** The branch-scoped
 artifact `PlanMd` requires a valid non-empty branch. In detached-HEAD
@@ -165,7 +165,7 @@ before either Write or write-rule runs.
 
 ## The Write-Rule Escape Pattern
 
-The pattern `flow-learn` uses for `.claude/` writes also applies to all
+The write-rule escape pattern for `.claude/` writes also applies to all
 monitored paths:
 
 1. The model Writes content to `.flow-states/<branch>/<purpose>-content.md`

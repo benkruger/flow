@@ -97,15 +97,6 @@ fn create_state_file(repo: &Path, branch: &str, skills_continue: &str) {
                 "cumulative_seconds": 0,
                 "visit_count": 0
             },
-            "flow-learn": {
-                "name": "Learn",
-                "status": "pending",
-                "started_at": null,
-                "completed_at": null,
-                "session_started_at": null,
-                "cumulative_seconds": 0,
-                "visit_count": 0
-            },
             "flow-complete": {
                 "name": "Complete",
                 "status": "pending",
@@ -194,7 +185,6 @@ fn seed_state_library(branch: &str, skills_continue: &str) -> (tempfile::TempDir
             },
             "flow-code": {"name": "Code", "status": "pending", "cumulative_seconds": 0, "visit_count": 0},
             "flow-review": {"name": "Review", "status": "pending", "cumulative_seconds": 0, "visit_count": 0},
-            "flow-learn": {"name": "Learn", "status": "pending", "cumulative_seconds": 0, "visit_count": 0},
             "flow-complete": {"name": "Complete", "status": "pending", "cumulative_seconds": 0, "visit_count": 0},
         },
         "skills": {
@@ -539,12 +529,11 @@ fn test_finalize_with_frozen_phases_loads_config() {
     let (_dir, root) = seed_state_library("frozen-branch", "auto");
     let frozen_path = root.join(".flow-states/frozen-branch/phases.json");
     let frozen = json!({
-        "order": ["flow-start", "flow-code", "flow-review", "flow-learn", "flow-complete"],
+        "order": ["flow-start", "flow-code", "flow-review", "flow-complete"],
         "phases": {
             "flow-start": {"name": "Start", "command": "/flow:flow-start"},
             "flow-code": {"name": "Code", "command": "/flow:flow-code"},
             "flow-review": {"name": "Review", "command": "/flow:flow-review"},
-            "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
             "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"}
         }
     });

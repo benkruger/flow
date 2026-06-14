@@ -301,7 +301,7 @@ project's test tree so the language test runner can discover and
 execute it. The exact path is owned by the project — declared via
 the project's `bin/test --adversarial-path` invocation — the same
 way each project owns the four `bin/{format,lint,build,test}`
-toolchain decisions. Worktree removal at Phase 5 Complete disposes
+toolchain decisions. Worktree removal at Phase 4 Complete disposes
 of the probe as a side effect of removing the worktree directory,
 so no separate cleanup hook is needed.
 
@@ -551,7 +551,7 @@ substrings, but the correct response to truncation is re-invocation
 against a narrowed partition, not recording the agent as skipped.
 
 **Class 0 — Read overflow.** For each high-investigation agent
-(reviewer, learn-analyst, documentation), check whether the
+(reviewer, documentation), check whether the
 returned output has zero structured `**Finding` blocks AND no
 `END-OF-FINDINGS` marker AND contains a context-overflow marker
 (`prompt is too long`, `context length`, `context window`, `too
@@ -657,7 +657,7 @@ the `phase-finalize` required-agents gate is satisfied — only its
 findings are missing.
 
 **Class 1 — Truncation.** For each high-investigation agent
-(reviewer, learn-analyst, documentation), check whether the
+(reviewer, documentation), check whether the
 returned output contains the literal `END-OF-FINDINGS`
 completion marker as the final structural element. Marker
 absence alone means the agent was truncated by `maxTurns`
@@ -677,9 +677,7 @@ When truncation is detected on an agent:
    `DOC_PATHS:`-driven agent), partition the diff by file family
    (`src/`, `tests/`, `agents/`, `skills/`, `.claude/`, `docs/`).
    For reviewer, partition by tenant family (architecture +
-   simplicity vs. correctness + security). For learn-analyst,
-   partition by tenant (process gap, rule compliance, missing
-   rule).
+   simplicity vs. correctness + security).
 2. Re-invoke the truncated agent once per non-empty partition,
    with the scope narrowed to that partition only. Keep the
    agent's other inputs (plan, CLAUDE.md, rules, narrowed
@@ -769,7 +767,7 @@ falsely shows "agent reviewed X" when "parent reviewed X" is what
 actually happened.
 </HARD-GATE>
 
-The probe file lives inside the worktree's test tree, so worktree removal at Phase 5 Complete (or `/flow:flow-abort`) disposes of it automatically as a side effect of `git worktree remove`. The basename glob is also pre-listed in `.git/info/exclude` (`test_adversarial_flow.*`, `*_adversarial_flow_test.rb`) so the throwaway probe never appears in a user's `git status` output alongside intentional changes.
+The probe file lives inside the worktree's test tree, so worktree removal at Phase 4 Complete (or `/flow:flow-abort`) disposes of it automatically as a side effect of `git worktree remove`. The basename glob is also pre-listed in `.git/info/exclude` (`test_adversarial_flow.*`, `*_adversarial_flow_test.rb`) so the throwaway probe never appears in a user's `git status` output alongside intentional changes.
 
 Record step completion:
 
@@ -958,7 +956,7 @@ If commit=manual, use AskUserQuestion:
 **Go back to Code:** update Phase 3 to `pending`, Phase 2 to
 `in_progress`, then invoke `flow:flow-code`.
 
-**Go back to Plan:** update Phases 4 and 3 to `pending`, Phase 2 to
+**Go back to Plan:** update Phase 3 to `pending`, Phase 2 to
 `in_progress`, then invoke `flow:flow-plan`.
 
 ### Commit
@@ -1047,7 +1045,7 @@ to determine how to advance.
    `skills.flow-review.continue` config.
    If `continue_action` is `"invoke"` → continue=auto.
    If `continue_action` is `"ask"` → continue=manual.
-2. If continue=auto → invoke `flow:flow-learn` directly using the Skill tool.
+2. If continue=auto → invoke `flow:flow-complete` directly using the Skill tool.
    Do NOT run `bin/flow status`. Do NOT use AskUserQuestion.
    This is the FINAL action in this response — nothing else follows.
 3. If continue=manual → you MUST do all of the following before proceeding:
@@ -1059,15 +1057,15 @@ to determine how to advance.
       ```
 
    b. Use AskUserQuestion:
-      "Phase 3: Review is complete. Ready to begin Phase 4: Learn?"
+      "Phase 3: Review is complete. Ready to begin Phase 4: Complete?"
       Options: "Yes, start Phase 4 now", "Not yet",
       "I have a correction or learning to capture"
    c. If "I have a correction or learning to capture":
       ask what to capture, invoke `/flow:flow-note`, then re-ask with
       only "Yes, start Phase 4 now" and "Not yet"
-   d. If Yes → invoke `flow:flow-learn` using the Skill tool
+   d. If Yes → invoke `flow:flow-complete` using the Skill tool
    e. If Not yet → print the paused banner below
-   f. Do NOT invoke `flow:flow-learn` until the user responds
+   f. Do NOT invoke `flow:flow-complete` until the user responds
 
 Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 
@@ -1079,7 +1077,7 @@ Do NOT skip this check. Do NOT auto-advance when the mode is manual.
 ```text
 ══════════════════════════════════════════════════
   ◆ FLOW — Paused
-  Run /flow:flow-learn when ready.
+  Run /flow:flow-complete when ready.
 ══════════════════════════════════════════════════
 ```
 ````

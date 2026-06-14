@@ -10,13 +10,7 @@ mod common;
 fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let mut phases = serde_json::Map::new();
     let phase_names = flow_rs::phase_config::phase_names();
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     for &p in &all_phases {
         let status = phase_statuses
             .iter()

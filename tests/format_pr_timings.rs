@@ -8,13 +8,7 @@ use serde_json::{json, Value};
 fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
     let mut phases = serde_json::Map::new();
     let phase_names = flow_rs::phase_config::phase_names();
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     for &p in &all_phases {
         let status = phase_statuses
             .iter()
@@ -46,19 +40,12 @@ fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
 
 #[test]
 fn test_all_complete() {
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(36);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(328);
     state["phases"]["flow-review"]["cumulative_seconds"] = json!(500);
-    state["phases"]["flow-learn"]["cumulative_seconds"] = json!(352);
     state["phases"]["flow-complete"]["cumulative_seconds"] = json!(20);
 
     let result = format_timings_table(&state, false);
@@ -113,20 +100,13 @@ fn test_started_only() {
     assert!(result.contains("| Start |"), "Result:\n{}", result);
     assert!(result.contains("| Code |"), "Result:\n{}", result);
     assert!(!result.contains("| Review |"), "Result:\n{}", result);
-    assert!(!result.contains("| Learn |"), "Result:\n{}", result);
     assert!(!result.contains("| Complete |"), "Result:\n{}", result);
     assert!(result.contains("| **Total** |"), "Result:\n{}", result);
 }
 
 #[test]
 fn test_uses_format_time() {
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!(3700);
@@ -142,13 +122,7 @@ fn test_cumulative_seconds_as_string() {
     // file with cumulative_seconds stored as "945" (e.g. from an
     // external edit or legacy writer) must render the same timing
     // as the integer 945.
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-code"]["cumulative_seconds"] = json!("945");
@@ -161,13 +135,7 @@ fn test_cumulative_seconds_as_string() {
 #[test]
 fn test_cli_writes_output_file() {
     let dir = tempfile::tempdir().unwrap();
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(60);
@@ -232,13 +200,7 @@ fn test_cli_invalid_json() {
 #[test]
 fn test_cli_happy_path() {
     let dir = tempfile::tempdir().unwrap();
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let mut state = make_state("flow-complete", &statuses);
     state["phases"]["flow-start"]["cumulative_seconds"] = json!(60);
@@ -271,13 +233,7 @@ fn run_impl_write_error_returns_err() {
     std::fs::write(&parent_as_file, "blocker").unwrap();
     let output_path = parent_as_file.join("out.md");
 
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let state = make_state("flow-complete", &statuses);
     let state_file = dir.path().join("state.json");
@@ -356,13 +312,7 @@ fn run_impl_empty_output_skips_mkdir_and_err_on_write() {
 #[test]
 fn run_impl_main_happy_path_ok_with_json_value() {
     let dir = tempfile::tempdir().unwrap();
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let statuses: Vec<(&str, &str)> = all_phases.iter().map(|&p| (p, "complete")).collect();
     let state = make_state("flow-complete", &statuses);
     let state_file = dir.path().join("state.json");

@@ -106,13 +106,13 @@ fn state_file_has_null_pr_fields() {
 }
 
 #[test]
-fn state_file_has_all_5_phases() {
+fn state_file_has_all_4_phases() {
     let dir = tempfile::tempdir().unwrap();
     setup_project(dir.path(), "rails", None);
-    run_init_state(dir.path(), &["five phases test"]);
-    let state = read_state_file(dir.path(), "five-phases-test");
+    run_init_state(dir.path(), &["four phases test"]);
+    let state = read_state_file(dir.path(), "four-phases-test");
     let phases = state["phases"].as_object().unwrap();
-    assert_eq!(phases.len(), 5);
+    assert_eq!(phases.len(), 4);
     assert_eq!(phases["flow-start"]["name"], "Start");
     assert_eq!(phases["flow-review"]["name"], "Review");
 }
@@ -136,7 +136,7 @@ fn state_file_other_phases_pending() {
     setup_project(dir.path(), "rails", None);
     run_init_state(dir.path(), &["pending phases test"]);
     let state = read_state_file(dir.path(), "pending-phases-test");
-    for key in ["flow-code", "flow-review", "flow-learn", "flow-complete"] {
+    for key in ["flow-code", "flow-review", "flow-complete"] {
         let phase = &state["phases"][key];
         assert_eq!(phase["status"], "pending");
         assert!(phase["started_at"].is_null());
@@ -242,7 +242,6 @@ fn skills_block_shape_seeded_from_flow_json() {
         "flow-start": {"continue": "auto"},
         "flow-code": {"commit": "auto", "continue": "auto"},
         "flow-review": {"commit": "auto", "continue": "auto"},
-        "flow-learn": {"commit": "auto", "continue": "auto"},
         "flow-complete": {"continue": "auto"},
         "flow-abort": {"continue": "auto"}
     });
@@ -1201,16 +1200,15 @@ fn lib_create_state_null_pr_fields() {
 }
 
 #[test]
-fn lib_create_state_has_six_phases() {
+fn lib_create_state_has_four_phases() {
     let dir = tempfile::tempdir().unwrap();
-    create_state(dir.path(), "six-phases", None, "", None, None, "").unwrap();
-    let state = read_state_direct(dir.path(), "six-phases");
+    create_state(dir.path(), "four-phases", None, "", None, None, "").unwrap();
+    let state = read_state_direct(dir.path(), "four-phases");
     let phases = state["phases"].as_object().unwrap();
-    assert_eq!(phases.len(), 5);
+    assert_eq!(phases.len(), 4);
     assert_eq!(phases["flow-start"]["name"], "Start");
     assert_eq!(phases["flow-code"]["name"], "Code");
     assert_eq!(phases["flow-review"]["name"], "Review");
-    assert_eq!(phases["flow-learn"]["name"], "Learn");
     assert_eq!(phases["flow-complete"]["name"], "Complete");
 }
 
@@ -1231,7 +1229,7 @@ fn lib_create_state_other_phases_pending() {
     let dir = tempfile::tempdir().unwrap();
     create_state(dir.path(), "pending-test", None, "", None, None, "").unwrap();
     let state = read_state_direct(dir.path(), "pending-test");
-    for key in ["flow-code", "flow-review", "flow-learn", "flow-complete"] {
+    for key in ["flow-code", "flow-review", "flow-complete"] {
         let phase = &state["phases"][key];
         assert_eq!(
             phase["status"], "pending",

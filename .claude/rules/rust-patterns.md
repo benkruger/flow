@@ -540,7 +540,7 @@ Before adding a new marker, grep the test file for existing
 When adding `append_log` calls to a Rust module, use
 `[Phase N] module-name — step (status)` format. Derive the phase
 number via `phase_number()` from `phase_config.rs` — never hardcode
-it unless the module is phase-specific (e.g., Phase 5 modules that
+it unless the module is phase-specific (e.g., Phase 4 modules that
 only run during Complete). For modules called from multiple phases
 (e.g., `finalize_commit`), read `current_phase` from the state file
 at runtime. Guard `append_log` calls in modules where

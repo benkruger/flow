@@ -83,8 +83,8 @@ file and exits cleanly.
 
 | Scenario | Behavior |
 |---|---|
-| State file exists, Learn (Phase 4) complete | Normal merge and cleanup — no warnings |
-| State file exists, Learn (Phase 4) incomplete | Warns, proceeds (confirms in manual mode) |
+| State file exists, Review (Phase 3) complete | Normal merge and cleanup — no warnings |
+| State file exists, Review (Phase 3) incomplete | Warns, proceeds (confirms in manual mode) |
 | State file missing | Warns, infers from git state, proceeds (confirms in manual mode) |
 | PR closed but not merged | Hard block, does not proceed |
 
@@ -98,7 +98,7 @@ state file doesn't exist, it notes that and finishes.
 
 - PR must be open or already merged — hard block if closed
 - CI must pass before merge
-- Learn (Phase 4) complete is a warning, not a hard block
+- Review (Phase 3) complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - Confirmation only when mode is manual (via `.flow.json`)
 - Manual-mode merge requires a single-use confirmation marker — both merge

@@ -54,15 +54,6 @@ const STATE_JSON: &str = r#"{
       "cumulative_seconds": 0,
       "visit_count": 0
     },
-    "flow-learn": {
-      "name": "Learn",
-      "status": "pending",
-      "started_at": null,
-      "completed_at": null,
-      "session_started_at": null,
-      "cumulative_seconds": 0,
-      "visit_count": 0
-    },
     "flow-complete": {
       "name": "Complete",
       "status": "pending",
@@ -80,7 +71,6 @@ const STATE_JSON: &str = r#"{
     "flow-start": {"continue": "manual"},
     "flow-code": {"commit": "manual", "continue": "manual"},
     "flow-review": {"commit": "auto", "continue": "auto"},
-    "flow-learn": {"commit": "auto", "continue": "auto"},
     "flow-abort": "auto",
     "flow-complete": "auto"
   },

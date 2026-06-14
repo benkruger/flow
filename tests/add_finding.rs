@@ -164,7 +164,7 @@ fn add_finding_allows_filed_outside_review() {
     let repo = create_git_repo_with_remote(dir.path());
     let state = json!({
         "branch": "y",
-        "current_phase": "flow-learn",
+        "current_phase": "flow-code",
         "findings": []
     });
     write_state(&repo, "y", &state);
@@ -179,7 +179,7 @@ fn add_finding_allows_filed_outside_review() {
             "--outcome",
             "filed",
             "--phase",
-            "flow-learn",
+            "flow-code",
             "--branch",
             "y",
             "--issue-url",
@@ -225,7 +225,7 @@ fn add_finding_with_issue_url_records_field() {
     let repo = create_git_repo_with_remote(dir.path());
     let state = json!({
         "branch": "z",
-        "current_phase": "flow-learn",
+        "current_phase": "flow-code",
         "findings": []
     });
     let state_path = write_state(&repo, "z", &state);
@@ -240,7 +240,7 @@ fn add_finding_with_issue_url_records_field() {
             "--outcome",
             "filed",
             "--phase",
-            "flow-learn",
+            "flow-code",
             "--branch",
             "z",
             "--issue-url",
@@ -260,7 +260,7 @@ fn add_finding_with_path_records_rule_path() {
     let repo = create_git_repo_with_remote(dir.path());
     let state = json!({
         "branch": "w",
-        "current_phase": "flow-learn",
+        "current_phase": "flow-code",
         "findings": []
     });
     let state_path = write_state(&repo, "w", &state);
@@ -275,7 +275,7 @@ fn add_finding_with_path_records_rule_path() {
             "--outcome",
             "rule_written",
             "--phase",
-            "flow-learn",
+            "flow-code",
             "--branch",
             "w",
             "--path",
@@ -530,7 +530,7 @@ fn filed_outcome_accepted_for_learn_lib() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
     let state = json!({
-        "current_phase": "flow-learn",
+        "current_phase": "flow-code",
         "findings": []
     });
     write_state_lib(&root, "learn-branch", &state);
@@ -538,7 +538,7 @@ fn filed_outcome_accepted_for_learn_lib() {
         finding: "x".to_string(),
         reason: "y".to_string(),
         outcome: "filed".to_string(),
-        phase: "flow-learn".to_string(),
+        phase: "flow-code".to_string(),
         issue_url: Some("https://example.com/1".to_string()),
         path: None,
         branch: Some("learn-branch".to_string()),
@@ -666,7 +666,7 @@ fn add_finding_array_root_state_noop_lib() {
 fn add_finding_run_impl_main_invalid_outcome_returns_error_tuple() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let args = make_args("not-an-outcome", "flow-learn", Some("test-branch"));
+    let args = make_args("not-an-outcome", "flow-code", Some("test-branch"));
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "error");
     assert_eq!(code, 1);
@@ -691,7 +691,7 @@ fn add_finding_run_impl_main_review_filing_blocked_returns_error_tuple() {
 fn add_finding_run_impl_main_no_state_returns_no_state_tuple() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let args = make_args("fixed", "flow-learn", Some("missing-branch"));
+    let args = make_args("fixed", "flow-code", Some("missing-branch"));
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "no_state");
     assert_eq!(code, 0);
@@ -705,10 +705,10 @@ fn add_finding_run_impl_main_success_returns_finding_count_tuple() {
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        r#"{"current_phase":"flow-learn","findings":[]}"#,
+        r#"{"current_phase":"flow-code","findings":[]}"#,
     )
     .unwrap();
-    let args = make_args("fixed", "flow-learn", Some("present-branch"));
+    let args = make_args("fixed", "flow-code", Some("present-branch"));
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(value["finding_count"], 1);
@@ -724,14 +724,14 @@ fn add_finding_run_impl_main_success_with_issue_url_writes_field() {
     let state_path = branch_dir.join("state.json");
     fs::write(
         &state_path,
-        r#"{"current_phase":"flow-learn","findings":[]}"#,
+        r#"{"current_phase":"flow-code","findings":[]}"#,
     )
     .unwrap();
     let args = Args {
         finding: "process gap".to_string(),
         reason: "filed as flow issue".to_string(),
         outcome: "filed".to_string(),
-        phase: "flow-learn".to_string(),
+        phase: "flow-code".to_string(),
         issue_url: Some("https://github.com/test/test/issues/42".to_string()),
         path: None,
         branch: Some("with-url".to_string()),
@@ -755,14 +755,14 @@ fn add_finding_run_impl_main_success_with_path_writes_field() {
     let state_path = branch_dir.join("state.json");
     fs::write(
         &state_path,
-        r#"{"current_phase":"flow-learn","findings":[]}"#,
+        r#"{"current_phase":"flow-code","findings":[]}"#,
     )
     .unwrap();
     let args = Args {
         finding: "no rule for X".to_string(),
         reason: "wrote rule".to_string(),
         outcome: "rule_written".to_string(),
-        phase: "flow-learn".to_string(),
+        phase: "flow-code".to_string(),
         issue_url: None,
         path: Some(".claude/rules/x.md".to_string()),
         branch: Some("with-path".to_string()),
@@ -783,7 +783,7 @@ fn add_finding_run_impl_main_unknown_phase_falls_back_to_phase_string() {
     let state_path = branch_dir.join("state.json");
     fs::write(
         &state_path,
-        r#"{"current_phase":"flow-learn","findings":[]}"#,
+        r#"{"current_phase":"flow-code","findings":[]}"#,
     )
     .unwrap();
     let args = make_args("fixed", "custom-unknown-phase", Some("custom-phase"));
@@ -805,10 +805,10 @@ fn add_finding_run_impl_main_no_findings_field_creates_array() {
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        r#"{"current_phase":"flow-learn"}"#,
+        r#"{"current_phase":"flow-code"}"#,
     )
     .unwrap();
-    let args = make_args("fixed", "flow-learn", Some("no-findings"));
+    let args = make_args("fixed", "flow-code", Some("no-findings"));
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(value["finding_count"], 1);
@@ -823,10 +823,10 @@ fn add_finding_run_impl_main_findings_wrong_type_resets_to_array() {
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        r#"{"current_phase":"flow-learn","findings":"not-an-array"}"#,
+        r#"{"current_phase":"flow-code","findings":"not-an-array"}"#,
     )
     .unwrap();
-    let args = make_args("fixed", "flow-learn", Some("wrong-type"));
+    let args = make_args("fixed", "flow-code", Some("wrong-type"));
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "ok");
     assert_eq!(value["finding_count"], 1);
@@ -855,14 +855,14 @@ fn add_finding_run_impl_main_cwd_drift_returns_error() {
     fs::create_dir_all(&branch_dir).unwrap();
     fs::write(
         branch_dir.join("state.json"),
-        r#"{"current_phase":"flow-learn","findings":[],"relative_cwd":"api"}"#,
+        r#"{"current_phase":"flow-code","findings":[],"relative_cwd":"api"}"#,
     )
     .unwrap();
     fs::create_dir(root.join("api")).unwrap();
     fs::create_dir(root.join("ios")).unwrap();
     let ios = root.join("ios").canonicalize().unwrap();
 
-    let args = make_args("fixed", "flow-learn", None);
+    let args = make_args("fixed", "flow-code", None);
     let (value, code) = run_impl_main(args, &root, &ios);
     assert_eq!(value["status"], "error");
     assert_eq!(code, 1);
@@ -883,7 +883,7 @@ fn add_finding_run_impl_main_mutate_state_failure_returns_error() {
     // Make state.json a directory so mutate_state fails when it tries
     // to read the file.
     fs::create_dir(branch_dir.join("state.json")).unwrap();
-    let args = make_args("fixed", "flow-learn", Some("bad-state"));
+    let args = make_args("fixed", "flow-code", Some("bad-state"));
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(value["status"], "error");
     assert_eq!(code, 1);
@@ -897,7 +897,7 @@ fn add_finding_run_impl_main_mutate_state_failure_returns_error() {
 fn add_finding_run_impl_with_root_resolver_none_returns_branch_error() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let args = make_args("fixed", "flow-learn", None);
+    let args = make_args("fixed", "flow-code", None);
     let resolver = |_: Option<&str>, _: &Path| -> Option<String> { None };
     let err = run_impl_with_root_resolver(&args, &root, &root, &resolver).unwrap_err();
     assert_eq!(err, "Could not determine current branch");
@@ -907,7 +907,7 @@ fn add_finding_run_impl_with_root_resolver_none_returns_branch_error() {
 fn add_finding_run_impl_main_slash_branch_returns_structured_error_no_panic() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let args = make_args("fixed", "flow-learn", Some("feature/foo"));
+    let args = make_args("fixed", "flow-code", Some("feature/foo"));
     let (value, code) = run_impl_main(args, &root, &root);
     assert_eq!(code, 1);
     assert_eq!(value["status"], "error");
@@ -921,7 +921,7 @@ fn add_finding_run_impl_main_slash_branch_returns_structured_error_no_panic() {
 fn add_finding_run_impl_main_with_cwd_result_err_falls_back_to_dot() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let args = make_args("fixed", "flow-learn", Some("test-branch"));
+    let args = make_args("fixed", "flow-code", Some("test-branch"));
     let cwd_err = Err(std::io::Error::new(
         std::io::ErrorKind::NotFound,
         "deleted cwd",
@@ -935,7 +935,7 @@ fn add_finding_run_impl_main_with_cwd_result_err_falls_back_to_dot() {
 fn add_finding_run_impl_main_with_cwd_result_ok_uses_cwd() {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().canonicalize().unwrap();
-    let args = make_args("fixed", "flow-learn", Some("test-branch"));
+    let args = make_args("fixed", "flow-code", Some("test-branch"));
     let cwd_ok = Ok(root.clone());
     let (value, code) = run_impl_main_with_cwd_result(args, &root, cwd_ok);
     assert_eq!(code, 0);

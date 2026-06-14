@@ -3091,8 +3091,8 @@ fn layer_10_passes_git_commit_in_unrelated_git_repo() {
 // --- layer_10_skill_commit_carveout ---
 //
 // The legitimate skill-driven commit path is `/flow:flow-commit` →
-// `bin/flow finalize-commit`. The flow-code, flow-review, and
-// flow-learn skills all set `_continue_pending=commit` on the state
+// `bin/flow finalize-commit`. The flow-code and flow-review skills
+// set `_continue_pending=commit` on the state
 // file immediately before invoking /flow:flow-commit, so the field is
 // the marker Layer 10 checks. When the carve-out fires, the hook
 // allows `bin/flow ... finalize-commit` (and only that shape) through
@@ -5539,20 +5539,6 @@ fn layer_11_does_not_fire_in_flow_review_phase() {
     assert_eq!(
         code, 0,
         "flow-review phase must allow bin/flow ci; stderr={stderr}"
-    );
-}
-
-#[test]
-fn layer_11_does_not_fire_in_flow_learn_phase() {
-    let (_dir, _root, cwd) = setup_active_flow_worktree_with_state(
-        "feat",
-        r#"{"current_phase": "flow-learn", "phases": {"flow-learn": {"status": "in_progress"}}}"#,
-    );
-    let input = r#"{"tool_input": {"command": "bin/flow ci"}}"#;
-    let (code, _stdout, stderr) = run_hook_with_input(input, Some(&cwd));
-    assert_eq!(
-        code, 0,
-        "flow-learn phase must allow bin/flow ci; stderr={stderr}"
     );
 }
 

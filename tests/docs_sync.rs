@@ -53,7 +53,6 @@ fn utility_skill_names() -> Vec<String> {
 fn required_features() -> Vec<(&'static str, Vec<&'static str>)> {
     vec![
         ("Autonomy config", vec!["autonomy"]),
-        ("Learning system", vec!["learning system"]),
         ("DAG decomposition", vec!["dag", "decompose"]),
         ("Zero dependencies", vec!["zero dependencies"]),
         ("Minimal repo artifacts", vec![".flow-states"]),

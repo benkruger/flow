@@ -314,16 +314,16 @@ fn token_cost_section(state: &Value) -> Vec<String> {
 
 /// Render the per-phase findings list as a nested GitHub Markdown
 /// list for the PR body. Consumed by `render_body` in
-/// `src/render_pr_body.rs` to produce the `## Review Findings` and
-/// `## Learn Findings` sections.
+/// `src/render_pr_body.rs` to produce the `## Review Findings`
+/// section.
 ///
 /// Filters `findings` by `phase` against `phase_key` per
 /// `.claude/rules/security-gates.md` "Normalize Before Comparing":
 /// the state-derived phase value is NUL-stripped, trimmed, and
 /// ASCII-lowercased before equality. `phase_key` is expected to be
-/// pre-normalized (the only callers pass `"flow-review"` /
-/// `"flow-learn"` literals); the asymmetric normalization is
-/// documented at this comment.
+/// pre-normalized (the only caller passes the `"flow-review"`
+/// literal); the asymmetric normalization is documented at this
+/// comment.
 ///
 /// Returns `String::new()` when no entries match so the caller can
 /// omit the section entirely.
@@ -522,8 +522,6 @@ pub fn format_complete_summary(state: &Value, closed_issues: Option<&[Value]>) -
     if let Some(findings_arr) = findings {
         let cr_lines = phase_findings_section(findings_arr, "flow-review", "Review Findings");
         lines.extend(cr_lines);
-        let learn_lines = phase_findings_section(findings_arr, "flow-learn", "Learn Findings");
-        lines.extend(learn_lines);
     }
 
     // Token Cost section (between Findings and Artifacts) — empty when

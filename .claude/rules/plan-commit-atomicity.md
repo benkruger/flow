@@ -51,11 +51,11 @@ requirement or split.
 
 **Code phase.** Before splitting a marked atomic group, verify all
 three conditions above. If verified, document the split decision in
-a state file note via `bin/flow log` so the Learn phase audit can
+a state file note via `bin/flow log` so the Review phase audit can
 confirm the reasoning. If any condition fails, honor the plan and
 commit atomically.
 
-**Learn phase.** The learn-analyst audit checks whether any marked
+**Review phase.** The reviewer agent checks whether any marked
 atomic group was split across commits. A split without documented
 rationale in either a state note or each commit message is a process
 gap.
@@ -101,9 +101,9 @@ Combining non-atomic tasks into one commit is NOT permitted when:
   Code should honor it unless the Code-phase discovery genuinely
   supersedes the plan's intent (in which case log the deviation).
 
-### Learn-phase audit
+### Review-phase audit
 
-The learn-analyst checks for undocumented batching the same way it
+The reviewer agent checks for undocumented batching the same way it
 checks for undocumented atomic-group splits. An unlogged batch
 becomes a process-gap finding.
 
@@ -125,7 +125,7 @@ When the Plan phase produces a prototype like
 `run_impl_with_deps(root, cwd, args, notifier)` — with additional
 parameters that unlock testing surfaces the plan implied but could
 not express — the deviation is often a valid design improvement.
-But if the deviation is not logged, the Learn phase audit replays
+But if the deviation is not logged, the Review phase audit replays
 the plan, sees the rename, and flags it as "plan said X but X is
 not there" without context.
 
@@ -139,8 +139,8 @@ bin/flow log <branch> "[Phase 2] Plan signature deviation: run_impl_with_notifie
 The log entry serves three readers: (1) the immediate Code phase as
 a reminder when composing the commit message, (2) Review's
 reviewer agent when cross-referencing plan vs. implementation, and
-(3) the Learn phase audit when distinguishing "plan said X, code has
-Y, Learn should investigate" from "plan said X, code has Y, this was
+(3) the Review phase audit when distinguishing "plan said X, code has
+Y, Review should investigate" from "plan said X, code has Y, this was
 a documented pivot."
 
 ### What Counts as a Deviation
@@ -192,9 +192,9 @@ requires extending the plan's prototype:
    (<why>)"`.
 3. Include the deviation in the commit message body so reviewers see
    it without consulting the log file.
-4. During Learn, the analyst will cross-reference the plan against
-   the log file and confirm the deviation was documented. An
-   undocumented deviation becomes a Learn-phase process-gap finding.
+4. During Review, the reviewer agent will cross-reference the plan
+   against the log file and confirm the deviation was documented. An
+   undocumented deviation becomes a Review-phase process-gap finding.
 
 ### Mechanical Enforcement
 

@@ -134,7 +134,7 @@ fn issue_binary_allows_override_during_review() {
 
 #[test]
 fn issue_binary_allows_during_other_phases() {
-    for phase in &["flow-code", "flow-learn", "flow-start"] {
+    for phase in &["flow-code", "flow-complete", "flow-start"] {
         let dir = tempfile::tempdir().unwrap();
         init_git(dir.path(), "test-feature");
         write_state(

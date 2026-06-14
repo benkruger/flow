@@ -140,8 +140,7 @@ and skip to the COMPLETE banner.
 |-------|------------|---------|
 | `/flow:flow-code` | Phase skill auto-chained from flow-start | Phase 2 — execute plan tasks one at a time with TDD |
 | `/flow:flow-review` | Phase skill auto-chained from flow-code | Phase 3 — six tenants assessed by four cognitively isolated agents |
-| `/flow:flow-learn` | Phase skill auto-chained from flow-review | Phase 4 — capture learnings, route to permanent homes |
-| `/flow:flow-complete` | Phase skill auto-chained from flow-learn | Phase 5 — merge the PR, remove the worktree, delete the state file |
+| `/flow:flow-complete` | Phase skill auto-chained from flow-review | Phase 4 — merge the PR, remove the worktree, delete the state file |
 | `/flow:flow-commit` | Phase skill at every commit checkpoint | Review the full diff, then stage, commit, and push through finalize-commit |
 | `/flow:flow-note` | Claude on user correction | Capture a correction or learning to the FLOW state file |
 

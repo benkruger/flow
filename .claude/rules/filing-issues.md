@@ -129,7 +129,7 @@ issues are pre-planned for fast-tracking through the Plan phase.
 ## Verify Before Filing
 
 When filing a bug discovered during a FLOW phase (Review
-tech debt, Learn process gaps), read the relevant source code
+tech debt, process gaps), read the relevant source code
 and verify the root cause before filing. A hypothesis about
 what might be happening is not evidence. The issue body must
 contain the verified mechanism — file path, line number, and
@@ -204,7 +204,7 @@ findings — adapted for the issue-filing decision:
 > this PR (code fix, rule clarification, or new rule)?**
 >
 > - If yes → the system already closed the gap. Record it in
->   the commit message and the Learn report. Do not file an
+>   the commit message and the Review report. Do not file an
 >   issue.
 > - If no → the gap is open. File it.
 
@@ -215,7 +215,7 @@ exists precisely to catch what the Plan author missed. A
 Review-caught-and-fixed violation is the system working,
 not a gap.
 
-A real Tenant 1 process gap looks like one of:
+A real process gap looks like one of:
 
 - A class of bug where no phase gate would have caught it —
   the bug shipped, was discovered post-merge, and nothing in
@@ -232,7 +232,7 @@ A scanner that fires correctly, an opt-out the author had to
 type, a repair round that resolved the violation — these are
 the gate doing its job. They are NOT process gaps, even when
 the friction feels excessive in a single flow. Specifically,
-none of the following count as Tenant 1 findings:
+none of the following count as findings:
 
 - "The scanner over-fired and I had to add N opt-out comments."
 - "A contract test rejected my change twice before it cleared."
@@ -246,8 +246,8 @@ workaround OR a published cost; using it is not a gap.
 A friction report becomes filable only when ALL three hold:
 
 1. **Recurrence across flows.** The same friction has been
-   observed in three or more separate flows by Learn-phase
-   findings, not anticipated as one-off in the current flow.
+   observed in three or more separate flows, not anticipated as
+   one-off in the current flow.
 2. **Cost is disproportionate.** The opt-out count, repair
    rounds, or workaround steps exceed what the rule's design
    intended (read the rule file's "How to Apply" or "Trigger"
@@ -264,7 +264,7 @@ project's curated-closed scanner philosophy explicitly prefers
 some friction over false-positive sweeps from premature
 scanner expansion.
 
-A real Tenant 2 enforcement escalation looks like:
+A real enforcement escalation looks like:
 
 - A rule that was clear, applicable, and ignored AND the same
   violation has been observed across multiple flows — pattern,
@@ -284,14 +284,11 @@ describe problems in the user's code.
 
 FLOW process bugs — problems with the plugin itself — must target
 `benkruger/flow`. Pass `--repo benkruger/flow` when filing against
-the plugin repo. The Phase 4 `flow-learn` skill is the only skill
-that routes process gaps cross-repo automatically:
-
-- `flow-learn` (Phase 4) — files process gap issues with `--repo`
+the plugin repo.
 
 `flow-explore` and `flow-plan` always file to the **current** repo
 (no `--repo` flag) — they do not prompt for a target. To file a
-FLOW process bug manually from a target project, invoke `bin/flow
+FLOW process bug from a target project, invoke `bin/flow
 issue --repo benkruger/flow` directly rather than going through
 `flow-explore` or `flow-plan`.
 

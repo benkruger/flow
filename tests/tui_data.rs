@@ -202,30 +202,6 @@ fn test_phase_step_counter_review_missing() {
 }
 
 #[test]
-fn test_phase_step_counter_learn_present() {
-    let mut state = make_state("flow-learn", &[("flow-learn", "in_progress")]);
-    state["learn_step"] = json!(3);
-    state["learn_steps_total"] = json!(7);
-    let got = phase_step_counter(&state).expect("counter present");
-    assert_eq!(
-        got,
-        PhaseStepCounter {
-            phase_label: "Learn",
-            phase_number: 4,
-            current: 3,
-            total: 7,
-            name: Some("applying learnings".to_string()),
-        }
-    );
-}
-
-#[test]
-fn test_phase_step_counter_learn_missing() {
-    let state = make_state("flow-learn", &[("flow-learn", "in_progress")]);
-    assert_eq!(phase_step_counter(&state), None);
-}
-
-#[test]
 fn test_phase_step_counter_complete_present() {
     let mut state = make_state("flow-complete", &[("flow-complete", "in_progress")]);
     state["complete_step"] = json!(4);
@@ -235,7 +211,7 @@ fn test_phase_step_counter_complete_present() {
         got,
         PhaseStepCounter {
             phase_label: "Complete",
-            phase_number: 5,
+            phase_number: 4,
             current: 4,
             total: 5,
             name: Some("merging PR".to_string()),
@@ -322,20 +298,6 @@ fn test_step_names_review_has_entries() {
         assert!(cr.contains_key(&key), "missing key {} in flow-review", key);
     }
     assert_eq!(cr.len(), 4);
-}
-
-#[test]
-fn test_step_names_learn_has_entries() {
-    let names = step_names();
-    let learn = names.get("flow-learn").unwrap();
-    for key in 1..=7 {
-        assert!(
-            learn.contains_key(&key),
-            "missing key {} in flow-learn",
-            key
-        );
-    }
-    assert_eq!(learn.len(), 7);
 }
 
 #[test]
@@ -714,41 +676,6 @@ fn test_phase_timeline_unknown_step_falls_back() {
     assert_eq!(timeline[0].annotation, "step 99 of 5");
 }
 
-// --- phase_timeline: Learn ---
-
-#[test]
-fn test_phase_timeline_learn_annotation() {
-    let mut state = make_state(
-        "flow-learn",
-        &[
-            ("flow-start", "complete"),
-            ("flow-code", "complete"),
-            ("flow-review", "complete"),
-            ("flow-learn", "in_progress"),
-        ],
-    );
-    state["learn_step"] = json!(4);
-    state["learn_steps_total"] = json!(7);
-    let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[3].annotation, "committing - step 5 of 7");
-}
-
-#[test]
-fn test_phase_timeline_learn_step_zero() {
-    let mut state = make_state(
-        "flow-learn",
-        &[
-            ("flow-start", "complete"),
-            ("flow-code", "complete"),
-            ("flow-review", "complete"),
-            ("flow-learn", "in_progress"),
-        ],
-    );
-    state["learn_steps_total"] = json!(7);
-    let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[3].annotation, "gathering sources - step 1 of 7");
-}
-
 // --- phase_timeline: Complete ---
 
 #[test]
@@ -759,14 +686,13 @@ fn test_phase_timeline_complete_annotation() {
             ("flow-start", "complete"),
             ("flow-code", "complete"),
             ("flow-review", "complete"),
-            ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
     );
     state["complete_step"] = json!(5);
     state["complete_steps_total"] = json!(5);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[4].annotation, "finalizing - step 5 of 5");
+    assert_eq!(timeline[3].annotation, "finalizing - step 5 of 5");
 }
 
 #[test]
@@ -777,13 +703,12 @@ fn test_phase_timeline_complete_step_zero() {
             ("flow-start", "complete"),
             ("flow-code", "complete"),
             ("flow-review", "complete"),
-            ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
     );
     state["complete_steps_total"] = json!(5);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[4].annotation, "");
+    assert_eq!(timeline[3].annotation, "");
 }
 
 #[test]
@@ -794,14 +719,13 @@ fn test_phase_timeline_complete_step_one() {
             ("flow-start", "complete"),
             ("flow-code", "complete"),
             ("flow-review", "complete"),
-            ("flow-learn", "complete"),
             ("flow-complete", "in_progress"),
         ],
     );
     state["complete_step"] = json!(1);
     state["complete_steps_total"] = json!(5);
     let timeline = phase_timeline(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
-    assert_eq!(timeline[4].annotation, "running checks - step 1 of 5");
+    assert_eq!(timeline[3].annotation, "running checks - step 1 of 5");
 }
 
 // --- phase_timeline: live elapsed for in-progress ---
@@ -1042,8 +966,8 @@ fn test_flow_summary_issues_url_fallback() {
         "label": "Tech Debt",
         "title": "Process gap",
         "url": "https://example.com/custom/path",
-        "phase": "flow-learn",
-        "phase_name": "Learn",
+        "phase": "flow-review",
+        "phase_name": "Review",
     }]);
     let summary = flow_summary(&state, Some(pacific("2026-01-01T00:00:00-08:00")));
     assert_eq!(summary.issues[0].ref_str, "https://example.com/custom/path");
@@ -2345,9 +2269,9 @@ fn phase_token_table_captures_phase_status() {
         .find(|r| r.phase_key == "flow-code")
         .expect("flow-code row");
     assert_eq!(code_row.status, "in_progress");
-    let learn_row = rows
+    let review_row = rows
         .iter()
-        .find(|r| r.phase_key == "flow-learn")
-        .expect("flow-learn row");
-    assert_eq!(learn_row.status, "pending");
+        .find(|r| r.phase_key == "flow-review")
+        .expect("flow-review row");
+    assert_eq!(review_row.status, "pending");
 }

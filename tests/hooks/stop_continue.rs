@@ -2221,7 +2221,7 @@ fn autonomous_stop_state_with_counter(
     state
 }
 
-/// Branch A — non-flow-code autonomous phases (flow-review, flow-learn,
+/// Branch A — non-flow-code autonomous phases (flow-review,
 /// flow-complete) have no `code_task` analog, so the counter logic
 /// does NOT run. Pre-existing stale counter values must NOT be
 /// mutated by the Stop hook in those phases.

@@ -32,7 +32,7 @@ use crate::required_agents::required_agents_for_phase;
     about = "Generic phase exit: complete + Slack + notification"
 )]
 pub struct Args {
-    /// Phase name (e.g. flow-start, flow-code, flow-review, flow-learn)
+    /// Phase name (e.g. flow-start, flow-code, flow-review, flow-complete)
     #[arg(long)]
     pub phase: String,
 

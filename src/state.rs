@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-/// The five FLOW phases, serialized as hyphenated keys (e.g. "flow-start").
+/// The four FLOW phases, serialized as hyphenated keys (e.g. "flow-start").
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Phase {
     #[serde(rename = "flow-start")]
@@ -10,8 +10,6 @@ pub enum Phase {
     FlowCode,
     #[serde(rename = "flow-review")]
     FlowReview,
-    #[serde(rename = "flow-learn")]
-    FlowLearn,
     #[serde(rename = "flow-complete")]
     FlowComplete,
 }
@@ -120,8 +118,8 @@ pub struct WindowSnapshot {
 /// A `WindowSnapshot` captured at a step-counter boundary.
 ///
 /// Appended to `PhaseState.step_snapshots[]` by `set_timestamp` when
-/// the mutated field is one of the four named step counters
-/// (`code_task`, `review_step`, `learn_step`, `complete_step`).
+/// the mutated field is one of the three named step counters
+/// (`code_task`, `review_step`, `complete_step`).
 /// `step` records the counter value and `field` records which
 /// counter; the snapshot fields are flattened into the outer JSON
 /// so each entry is one flat object.
@@ -274,12 +272,6 @@ pub struct FlowState {
         rename = "review_step"
     )]
     pub review_step: Option<i64>,
-
-    // Learn phase TUI progress
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub learn_step: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub learn_steps_total: Option<i64>,
 
     // Complete phase TUI progress
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -55,7 +55,7 @@ iteration goal is "read coverage, edit, re-measure":
 
 ## When Full CI Is Warranted
 
-Outside of Code phase (during Plan, Review, Learn, Complete, or
+Outside of Code phase (during Plan, Review, Complete, or
 on main when no flow is active), full CI (or `bin/flow ci --test`)
 is the right tool when:
 
@@ -181,7 +181,7 @@ the full decision surface: every blocking shape, the `--clean`
 carve-out (bare, with branch arg, uppercase, equals form),
 subcommand-position discipline (phase-enter, phase-transition,
 set-timestamp, log all pass through), every passing phase
-context (no active flow; flow-start / flow-review / flow-learn /
+context (no active flow; flow-start / flow-review /
 flow-complete; flow-code status pending / complete; non-ci
 subcommands), and every fail-closed shape (unparseable JSON,
 invalid UTF-8, missing `current_phase`, wrong-type `phases`,

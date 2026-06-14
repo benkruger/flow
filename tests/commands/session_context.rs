@@ -77,15 +77,6 @@ fn make_state() -> Value {
                 "cumulative_seconds": 0,
                 "visit_count": 0
             },
-            "flow-learn": {
-                "name": "Learn",
-                "status": "pending",
-                "started_at": null,
-                "completed_at": null,
-                "session_started_at": null,
-                "cumulative_seconds": 0,
-                "visit_count": 0
-            },
             "flow-complete": {
                 "name": "Complete",
                 "status": "pending",

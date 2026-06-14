@@ -93,7 +93,7 @@ pub(crate) fn should_reject_for_review(
     }
     // Defense in depth: serde_json's default last-wins behavior on
     // duplicate keys lets a crafted state file like
-    // `{"current_phase":"flow-review","current_phase":"flow-learn"}`
+    // `{"current_phase":"flow-review","current_phase":"flow-code"}`
     // bypass the gate when the parsed value is read normally. Scan
     // the raw content for ANY occurrence of `"current_phase"`
     // followed by a value that normalizes to one of

@@ -15,18 +15,11 @@ use serde_json::{json, Value};
 
 /// Build a state-file JSON matching the default phase order.
 fn make_state(current_phase: &str, phase_statuses: &[(&str, &str)]) -> Value {
-    let order = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let order = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let names = [
         ("flow-start", "Start"),
         ("flow-code", "Code"),
         ("flow-review", "Review"),
-        ("flow-learn", "Learn"),
         ("flow-complete", "Complete"),
     ];
     let name_map: std::collections::HashMap<&str, &str> = names.into_iter().collect();
@@ -319,12 +312,11 @@ fn run_impl_main_loads_frozen_phase_config_when_present() {
     .unwrap();
 
     let frozen = json!({
-        "order": ["flow-start", "flow-code", "flow-review", "flow-learn", "flow-complete"],
+        "order": ["flow-start", "flow-code", "flow-review", "flow-complete"],
         "phases": {
             "flow-start": {"name": "Start", "command": "/flow:flow-start"},
             "flow-code": {"name": "Code", "command": "/flow:flow-code"},
             "flow-review": {"name": "Review", "command": "/flow:flow-review"},
-            "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
             "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"},
         }
     });
@@ -454,7 +446,7 @@ fn run_impl_main_first_visit_no_previously_completed_message() {
 fn run_impl_main_phase_4_requires_phase_3_complete() {
     let dir = tempfile::tempdir().unwrap();
     let state = make_state(
-        "flow-learn",
+        "flow-complete",
         &[
             ("flow-start", "complete"),
             ("flow-code", "complete"),
@@ -462,27 +454,9 @@ fn run_impl_main_phase_4_requires_phase_3_complete() {
         ],
     );
     write_state(dir.path(), "test", state);
-    let (out, code) = run_impl_main("flow-learn", Some("test"), dir.path());
-    assert_eq!(code, 1);
-    assert!(out.contains("Phase 3"));
-}
-
-#[test]
-fn run_impl_main_phase_5_requires_phase_4_complete() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = make_state(
-        "flow-complete",
-        &[
-            ("flow-start", "complete"),
-            ("flow-code", "complete"),
-            ("flow-review", "complete"),
-            ("flow-learn", "pending"),
-        ],
-    );
-    write_state(dir.path(), "test", state);
     let (out, code) = run_impl_main("flow-complete", Some("test"), dir.path());
     assert_eq!(code, 1);
-    assert!(out.contains("Phase 4"));
+    assert!(out.contains("Phase 3"));
 }
 
 #[test]

@@ -990,43 +990,13 @@ fn test_flow_complete_no_github_ci_status_step() {
 // --- exhausted-retry note path ---
 //
 // The `agent_exhausted_retries` state-note path is gone. The
-// flow-review and flow-learn retry loops no longer call
+// flow-review retry loop no longer calls
 // `bin/flow append-note` with a `--kind` flag, and the dead
 // `agent_exhausted_retries` note kind no longer exists. Exhausted
 // and skipped agents surface through `phases.<phase>.agents_skipped`
-// and the Complete Done banner's Skipped Agents section. These
-// per-file tombstones catch a merge conflict or accidental edit
-// that re-introduces the dead invocation in either SKILL.md.
-
-/// Tombstone: removed in PR #1584. The `agent_exhausted_retries`
-/// state-note path is gone from `skills/flow-learn/SKILL.md` — the
-/// retry loop and Done-section recovery no longer invoke
-/// `bin/flow append-note` with the dead `--kind` flag or the
-/// `agent_exhausted_retries` note kind. Must not return.
-///
-/// Stability argument: the protected target is Markdown prose, not
-/// Rust source. The byte literals `agent_exhausted_retries` and
-/// `--kind` cannot be reassembled at runtime — Markdown is a flat
-/// byte stream with no `concat!` macro, no `format!` interpolation,
-/// and no named constant references. A merge conflict can only
-/// resurrect the exact bytes, which this scanner catches.
-#[test]
-fn test_flow_learn_skill_no_exhausted_retry_note() {
-    let path = common::skills_dir().join("flow-learn").join("SKILL.md");
-    let content = fs::read_to_string(&path).expect("flow-learn SKILL.md must exist");
-    assert!(
-        !content.contains("agent_exhausted_retries"),
-        "skills/flow-learn/SKILL.md must not reference `agent_exhausted_retries` — \
-         the dead state-note path is replaced by the Complete Done banner's \
-         Skipped Agents section sourced from `phases.<phase>.agents_skipped`."
-    );
-    assert!(
-        !content.contains("--kind"),
-        "skills/flow-learn/SKILL.md must not invoke `bin/flow append-note --kind` — \
-         the real append-note interface is `--note`/`--type`/`--branch`; the \
-         `--kind` flag belonged only to the removed exhausted-retry note path."
-    );
-}
+// and the Complete Done banner's Skipped Agents section. This
+// per-file tombstone catches a merge conflict or accidental edit
+// that re-introduces the dead invocation in the SKILL.md.
 
 /// Tombstone: removed in PR #1584. The `agent_exhausted_retries`
 /// state-note path is gone from `skills/flow-review/SKILL.md` — the
@@ -1932,6 +1902,115 @@ fn test_scanner_no_violations_for_non_test_fns() {
         violations.is_empty(),
         "plain fn declarations without #[test] should be ignored: {:?}",
         violations
+    );
+}
+
+// --- Learn phase removal ---
+//
+// The Learn phase (Phase 4) and its `flow-learn` skill plus the
+// cognitively-isolated `learn-analyst` agent were removed. These
+// tombstones lock the removal in: a merge conflict resolution that
+// re-introduces any of the deleted files, the `Phase::FlowLearn`
+// enum variant, the `learn_steps_total` state field, the `flow-learn`
+// config axis, or the `Agent(flow:learn-analyst)` / `Skill(flow:flow-learn)`
+// allow entries fails CI immediately.
+
+/// Tombstone: removed in PR #1897. The `flow-learn` SKILL.md was
+/// deleted alongside the Learn phase. Must not return. File-existence
+/// check pairs with the source-content tombstones below so a
+/// `#[path = "..."]` re-import cannot resurrect the skill unseen.
+#[test]
+fn test_skills_no_flow_learn_skill_file() {
+    assert!(
+        !common::skills_dir()
+            .join("flow-learn")
+            .join("SKILL.md")
+            .exists(),
+        "skills/flow-learn/SKILL.md must not exist — the Learn phase was removed"
+    );
+}
+
+/// Tombstone: removed in PR #1897. The `learn-analyst` agent was
+/// deleted alongside the Learn phase. Must not return.
+#[test]
+fn test_agents_no_learn_analyst_agent_file() {
+    assert!(
+        !common::agents_dir().join("learn-analyst.md").exists(),
+        "agents/learn-analyst.md must not exist — the Learn phase was removed"
+    );
+}
+
+/// Tombstone: removed in PR #1897. The `Phase::FlowLearn` enum variant
+/// is gone from `src/state.rs`. Must not return.
+///
+/// Stability argument: `FlowLearn` is a Rust enum-variant identifier
+/// that must appear verbatim in source to compile — it cannot be
+/// produced by `concat!`, `format!`, or a named constant reference,
+/// so the byte-substring check is sufficient.
+#[test]
+fn test_state_no_flow_learn_enum_variant() {
+    let content = fs::read_to_string(common::repo_root().join("src").join("state.rs"))
+        .expect("src/state.rs must exist");
+    assert!(
+        !content.contains("FlowLearn"),
+        "src/state.rs must not declare the `Phase::FlowLearn` variant"
+    );
+}
+
+/// Tombstone: removed in PR #1897. The `learn_steps_total` state field
+/// is gone from `src/state.rs`. Must not return.
+///
+/// Stability argument: `learn_steps_total` is a Rust struct-field
+/// identifier that must appear verbatim in source to compile — no
+/// `concat!`, `format!`, or named constant can synthesize a struct
+/// field name, so the byte-substring check is sufficient.
+#[test]
+fn test_state_no_learn_steps_total_field() {
+    let content = fs::read_to_string(common::repo_root().join("src").join("state.rs"))
+        .expect("src/state.rs must exist");
+    assert!(
+        !content.contains("learn_steps_total"),
+        "src/state.rs must not declare the `learn_steps_total` field"
+    );
+}
+
+/// Tombstone: removed in PR #1897. The `flow-learn` config axis is gone
+/// from `flow-phases.json`. Must not return.
+///
+/// Stability argument: `flow-phases.json` is a flat JSON byte stream
+/// with no `concat!` macro, no `format!` interpolation, and no named
+/// constant references — the `flow-learn` key can only reappear as the
+/// exact bytes a merge conflict resurrects, which this scanner catches.
+#[test]
+fn test_phases_json_no_flow_learn_axis() {
+    let content = fs::read_to_string(common::repo_root().join("flow-phases.json"))
+        .expect("flow-phases.json must exist");
+    assert!(
+        !content.contains("flow-learn"),
+        "flow-phases.json must not reference the `flow-learn` config axis"
+    );
+}
+
+/// Tombstone: removed in PR #1897. The `Agent(flow:learn-analyst)` and
+/// `Skill(flow:flow-learn)` allow entries are gone from
+/// `src/prime_check.rs::UNIVERSAL_ALLOW`. Must not return.
+///
+/// Stability argument: the two entries are string literals in a Rust
+/// `&[&str]` constant. A reintroduction by `concat!` or `format!`
+/// would not produce a compile-time `&'static str` array element, and
+/// no named constant aliases them, so the byte-substring check over
+/// the source is sufficient.
+#[test]
+fn test_prime_check_no_learn_analyst_allow_entry() {
+    let content = fs::read_to_string(common::repo_root().join("src").join("prime_check.rs"))
+        .expect("src/prime_check.rs must exist");
+    assert!(
+        !content.contains("Agent(flow:learn-analyst)"),
+        "src/prime_check.rs must not list the `Agent(flow:learn-analyst)` allow entry"
+    );
+    assert!(
+        !content.contains("Skill(flow:flow-learn)"),
+        "src/prime_check.rs must not list the `Skill(flow:flow-learn)` allow entry"
     );
 }
 

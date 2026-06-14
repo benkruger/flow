@@ -19,15 +19,10 @@ fn required_agents_for_phase_returns_review_set() {
 }
 
 #[test]
-fn required_agents_for_phase_returns_learn_set() {
-    let agents = required_agents_for_phase("flow-learn");
-    assert_eq!(agents, &["learn-analyst"]);
-}
-
-#[test]
 fn required_agents_for_phase_returns_empty_for_unknown_phase() {
     assert!(required_agents_for_phase("flow-code").is_empty());
     assert!(required_agents_for_phase("flow-start").is_empty());
+    assert!(required_agents_for_phase("flow-complete").is_empty());
     assert!(required_agents_for_phase("").is_empty());
     assert!(required_agents_for_phase("nonsense").is_empty());
 }
@@ -38,7 +33,6 @@ fn required_agents_for_phase_returns_empty_for_unknown_phase() {
 fn required_agents_constant_contains_known_phases() {
     let phases: Vec<&str> = REQUIRED_AGENTS.iter().map(|(p, _)| *p).collect();
     assert!(phases.contains(&"flow-review"));
-    assert!(phases.contains(&"flow-learn"));
 }
 
 #[test]

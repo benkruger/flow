@@ -720,7 +720,7 @@ capped at 3 attempts.
 
 Invoke `flow:plan-reviewer` via the **Agent tool** with
 `subagent_type: "flow:plan-reviewer"` (the canonical sub-agent
-dispatch shape — matching the flow-review and flow-learn agent
+dispatch shape — matching the flow-review agent
 invocations; the Skill tool is reserved for skill-to-skill
 dispatch, not sub-agent dispatch). The prompt is a three-block
 payload: the drafted Implementation Plan body verbatim, the
@@ -977,7 +977,7 @@ retry the edit silently. The recovery command shape:
 `gh issue edit` does not auto-delete the body file. Delete the
 temp file explicitly via the Write tool by writing an empty
 string to `.flow-issue-body-<id>`, then ignore the empty file —
-the worktree cleanup at Phase 5 Complete handles disposal. (The
+the worktree cleanup at Phase 4 Complete handles disposal. (The
 Bash permission allow-list refuses ad-hoc `rm` calls during a
 flow per `.claude/rules/permissions.md`; rewriting to empty is
 the sanctioned alternative.) Skip this empty-write step when

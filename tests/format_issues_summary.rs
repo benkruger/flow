@@ -35,8 +35,8 @@ fn happy_path_writes_table_and_reports_ok() {
     let repo = create_git_repo_with_remote(dir.path());
     let state = json!({
         "issues_filed": [
-            {"label": "Rule", "title": "t1", "url": "https://github.com/o/r/issues/1", "phase_name": "Learn"},
-            {"label": "Tech Debt", "title": "t2", "url": "https://github.com/o/r/issues/2", "phase_name": "Learn"}
+            {"label": "Rule", "title": "t1", "url": "https://github.com/o/r/issues/1", "phase_name": "Review"},
+            {"label": "Tech Debt", "title": "t2", "url": "https://github.com/o/r/issues/2", "phase_name": "Review"}
         ]
     });
     let state_path = write_state(dir.path(), &state);
@@ -148,7 +148,7 @@ fn creates_parent_directories_for_output() {
     let repo = create_git_repo_with_remote(dir.path());
     let state = json!({
         "issues_filed": [
-            {"label": "X", "title": "t", "url": "https://github.com/o/r/issues/1", "phase_name": "Learn"}
+            {"label": "X", "title": "t", "url": "https://github.com/o/r/issues/1", "phase_name": "Review"}
         ]
     });
     let state_path = write_state(dir.path(), &state);
@@ -180,8 +180,8 @@ fn make_issues(labels: &[&str]) -> serde_json::Value {
                 "label": label,
                 "title": format!("Issue {}", i + 1),
                 "url": format!("https://github.com/test/test/issues/{}", i + 1),
-                "phase": "flow-learn",
-                "phase_name": "Learn",
+                "phase": "flow-review",
+                "phase_name": "Review",
                 "timestamp": "2026-01-01T00:00:00-08:00",
             })
         })
@@ -212,7 +212,7 @@ fn single_issue_formats_correctly() {
     assert!(result.has_issues);
     assert_eq!(result.banner_line, "Issues filed: 1 (Rule: 1)");
     assert!(result.table.contains("| Label | Title | Phase | URL |"));
-    assert!(result.table.contains("| Rule | Issue 1 | Learn |"));
+    assert!(result.table.contains("| Rule | Issue 1 | Review |"));
 }
 
 #[test]
@@ -242,8 +242,8 @@ fn table_url_is_short_reference() {
             "label": "Rule",
             "title": "Test rule",
             "url": "https://github.com/test/test/issues/42",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
+            "phase": "flow-review",
+            "phase_name": "Review",
             "timestamp": "2026-01-01T00:00:00-08:00",
         }]
     });

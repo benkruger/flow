@@ -110,18 +110,6 @@ fn create_state(repo: &Path, branch: &str, current_phase: &str, skills_continue:
                     {"agent": "documentation", "timestamp": "2026-01-01T00:03:33-08:00"}
                 ]
             },
-            "flow-learn": {
-                "name": "Learn",
-                "status": if current_phase == "flow-learn" { "in_progress" } else { "pending" },
-                "started_at": if current_phase == "flow-learn" { Some("2026-01-01T00:04:00-08:00") } else { None },
-                "completed_at": null,
-                "session_started_at": if current_phase == "flow-learn" { Some("2026-01-01T00:04:00-08:00") } else { None },
-                "cumulative_seconds": 0,
-                "visit_count": if current_phase == "flow-learn" { 1 } else { 0 },
-                "agents_returned": [
-                    {"agent": "learn-analyst", "timestamp": "2026-01-01T00:04:30-08:00"}
-                ]
-            },
             "flow-complete": {
                 "name": "Complete",
                 "status": "pending",
@@ -142,10 +130,6 @@ fn create_state(repo: &Path, branch: &str, current_phase: &str, skills_continue:
                 "continue": skills_continue
             },
             "flow-review": {
-                "commit": skills_continue,
-                "continue": skills_continue
-            },
-            "flow-learn": {
                 "commit": skills_continue,
                 "continue": skills_continue
             }
@@ -183,18 +167,18 @@ fn parse_output(output: &Output) -> Value {
 // --- Tests ---
 
 #[test]
-fn test_learn_with_slack_reply_skipped() {
+fn test_review_with_slack_reply_skipped() {
     // thread-ts provided but no Slack config → Slack skipped, phase still completes
     let dir = tempfile::tempdir().unwrap();
-    let branch = "learn-slack";
+    let branch = "review-slack";
     let repo = create_git_repo(dir.path());
-    create_state(&repo, branch, "flow-learn", "auto");
+    create_state(&repo, branch, "flow-review", "auto");
 
     let output = run_phase_finalize(
         &repo,
         &[
             "--phase",
-            "flow-learn",
+            "flow-review",
             "--branch",
             branch,
             "--thread-ts",
@@ -215,7 +199,7 @@ fn test_learn_with_slack_reply_skipped() {
     // State should be updated — phase completed
     let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(state["phases"]["flow-learn"]["status"], "complete");
+    assert_eq!(state["phases"]["flow-review"]["status"], "complete");
 }
 
 #[test]
@@ -340,7 +324,7 @@ fn test_review_phase() {
     let state_path = flow_states_dir(&repo).join(branch).join("state.json");
     let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
     assert_eq!(state["phases"]["flow-review"]["status"], "complete");
-    assert_eq!(state["current_phase"], "flow-learn");
+    assert_eq!(state["current_phase"], "flow-complete");
 }
 
 #[test]
@@ -359,23 +343,6 @@ fn test_missing_state_file_returns_error() {
         .as_str()
         .unwrap_or("")
         .contains("No state file found"));
-}
-
-#[test]
-fn test_learn_phase_finalize() {
-    let dir = tempfile::tempdir().unwrap();
-    let branch = "learn-fin";
-    let repo = create_git_repo(dir.path());
-    create_state(&repo, branch, "flow-learn", "auto");
-
-    let output = run_phase_finalize(&repo, &["--phase", "flow-learn", "--branch", branch]);
-    let data = parse_output(&output);
-    assert_eq!(data["status"], "ok");
-
-    let state_path = flow_states_dir(&repo).join(branch).join("state.json");
-    let state: Value = serde_json::from_str(&fs::read_to_string(&state_path).unwrap()).unwrap();
-    assert_eq!(state["phases"]["flow-learn"]["status"], "complete");
-    assert_eq!(state["current_phase"], "flow-complete");
 }
 
 #[test]
@@ -444,21 +411,18 @@ fn test_frozen_phase_config_used() {
             "flow-start",
             "flow-code",
             "flow-review",
-            "flow-learn",
             "flow-complete"
         ],
         "commands": {
             "flow-start": "/flow:flow-start",
             "flow-code": "/flow:flow-code",
             "flow-review": "/flow:flow-review",
-            "flow-learn": "/flow:flow-learn",
             "flow-complete": "/flow:flow-complete"
         },
         "phase_names": {
             "flow-start": "Start",
             "flow-code": "Code",
             "flow-review": "Review",
-            "flow-learn": "Learn",
             "flow-complete": "Complete"
         }
     });
@@ -581,13 +545,7 @@ fn phase_finalize_write_state(root: &std::path::Path, branch: &str, current_phas
     let branch_dir = root.join(".flow-states").join(branch);
     fs::create_dir_all(&branch_dir).unwrap();
 
-    let phase_order = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
+    let phase_order = ["flow-start", "flow-code", "flow-review", "flow-complete"];
     let cur_idx = phase_order
         .iter()
         .position(|p| *p == current_phase)
@@ -620,9 +578,6 @@ fn phase_finalize_write_state(root: &std::path::Path, branch: &str, current_phas
                 {"agent": "pre-mortem", "timestamp": "2026-01-01T00:00:31-08:00"},
                 {"agent": "adversarial", "timestamp": "2026-01-01T00:00:32-08:00"},
                 {"agent": "documentation", "timestamp": "2026-01-01T00:00:33-08:00"}
-            ])),
-            "flow-learn" => Some(json!([
-                {"agent": "learn-analyst", "timestamp": "2026-01-01T00:00:30-08:00"}
             ])),
             _ => None,
         };
@@ -1021,12 +976,11 @@ fn finalize_loads_frozen_config_when_present() {
     phase_finalize_write_state(root, "branch-frozen", "flow-code");
 
     let frozen = json!({
-        "order": ["flow-start", "flow-code", "flow-review", "flow-learn", "flow-complete"],
+        "order": ["flow-start", "flow-code", "flow-review", "flow-complete"],
         "phases": {
             "flow-start": {"name": "Start", "command": "/flow:flow-start"},
             "flow-code": {"name": "Code", "command": "/flow:flow-code"},
             "flow-review": {"name": "Review", "command": "/flow:flow-review"},
-            "flow-learn": {"name": "Learn", "command": "/flow:flow-learn"},
             "flow-complete": {"name": "Complete", "command": "/flow:flow-complete"},
         }
     });
@@ -1299,7 +1253,7 @@ fn phase_finalize_rejects_when_only_agents_skipped_present() {
 }
 
 #[test]
-fn phase_finalize_no_required_agents_gate_for_non_review_learn_phases() {
+fn phase_finalize_no_required_agents_gate_for_non_review_phases() {
     // flow-code has no required-agents entry in REQUIRED_AGENTS, so
     // the gate is a no-op for flow-code. The phase advances without
     // any agents_returned or agents_skipped present.
@@ -1340,22 +1294,4 @@ fn phase_finalize_required_agents_gate_skips_entries_without_agent_field() {
     let args = phase_finalize_test_args("flow-review", "malformed-entries", None, None);
     let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
     assert_eq!(result["status"], "ok");
-}
-
-#[test]
-fn phase_finalize_required_agents_gate_fires_for_flow_learn() {
-    // flow-learn requires {learn-analyst}. State has no
-    // agents_returned; the gate must fire with the same reason and
-    // list learn-analyst as missing.
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path();
-    phase_finalize_write_state(root, "learn-missing", "flow-learn");
-    clear_agents_returned(root, "learn-missing", "flow-learn");
-    let args = phase_finalize_test_args("flow-learn", "learn-missing", None, None);
-    let result = run_impl(root, root, &args).expect("run_impl returns Ok envelope");
-    assert_eq!(result["status"], "error");
-    assert_eq!(result["reason"], "required_agent_not_returned");
-    let missing = result["missing"].as_array().expect("missing array");
-    assert_eq!(missing.len(), 1);
-    assert_eq!(missing[0], "learn-analyst");
 }

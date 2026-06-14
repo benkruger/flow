@@ -28,7 +28,7 @@ use crate::phase_transition::phase_enter;
     about = "Generic phase entry: gate + enter + state data"
 )]
 pub struct Args {
-    /// Phase name (e.g. flow-code, flow-review, flow-learn)
+    /// Phase name (e.g. flow-code, flow-review, flow-complete)
     #[arg(long)]
     pub phase: String,
 

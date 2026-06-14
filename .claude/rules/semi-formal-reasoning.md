@@ -22,14 +22,11 @@ Skip the reasoning discipline when the agent:
 
 - Produces concrete artifacts rather than prose findings (e.g.,
   a code generator that outputs compilable code)
-- Performs process analysis rather than code-semantic analysis
-  (e.g., learn-analyst auditing rule compliance and process gaps)
 - Evaluates comprehension or documentation rather than behavior
   (e.g., documentation agent reviewing maintainability and doc accuracy)
 
-Current agents without the discipline: learn-analyst, documentation.
-Learn-analyst performs compliance auditing, not code-semantic
-analysis. Documentation agent evaluates comprehension barriers and
+Current agents without the discipline: documentation. The
+documentation agent evaluates comprehension barriers and
 documentation drift — neither requires execution-path tracing.
 
 ## The Template

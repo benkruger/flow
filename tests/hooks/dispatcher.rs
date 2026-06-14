@@ -363,7 +363,7 @@ fn test_stop_continue_context_included_in_block_reason() {
     let state = json!({
         "branch": branch,
         "_continue_pending": "commit",
-        "_continue_context": "Set learn_step=5, then self-invoke flow:flow-learn --continue-step."
+        "_continue_context": "Set review_step=5, then self-invoke flow:flow-review --continue-step."
     });
     setup_git_and_state(dir.path(), branch, &state);
 
@@ -379,7 +379,7 @@ fn test_stop_continue_context_included_in_block_reason() {
         "reason must include 'Next steps:' header"
     );
     assert!(
-        reason.contains("learn_step=5"),
+        reason.contains("review_step=5"),
         "reason must embed the context body"
     );
 }

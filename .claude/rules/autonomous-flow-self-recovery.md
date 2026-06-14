@@ -23,7 +23,7 @@ When a tool call fails during an autonomous phase, ask:
 > the model is not authorized to answer?**
 
 - If the message names the fix (mechanical) → resolve in-flow, log
-  the rerouting via `bin/flow log` for the Learn-phase analyst, and
+  the rerouting via `bin/flow log` for the Review-phase audit, and
   retry the action with the corrected input.
 - If the failure depends on domain judgment, semantic intent, or
   evidence the model lacks (substantive) → surface via
@@ -94,22 +94,18 @@ similar error, read the message. If it names the canonical
 destination, the correct tool, or a structurally identical retry,
 classify as mechanical and rerun. Log the rerouting via `bin/flow
 log <branch> "[Phase 2] Mechanical recovery: <what failed> →
-<retry shape>"` so the Learn-phase audit can confirm the
+<retry shape>"` so the Review-phase audit can confirm the
 discipline.
 
 **During Review phase.** When a sub-agent's output shows it
 hit a mechanical failure and recovered, that is the rule working —
 not a finding. When the agent prompted the user for a mechanical
 failure, surface it as a process gap: the gap is in the agent's
-prompt, not in the agent's reasoning.
-
-**During Learn phase.** The learn-analyst audits the session log
-for mechanical-recovery entries and substantive prompts. A
-substantive prompt without a clear domain question is a gap (the
-model should have classified mechanical). A mechanical recovery
-that took more than one retry is a gap (the rerouting itself
-needs work). Both surface as findings the analyst routes to a
-rule update or skill clarification.
+prompt, not in the agent's reasoning. A substantive prompt without
+a clear domain question is also a gap (the model should have
+classified mechanical), and a mechanical recovery that took more
+than one retry is a gap (the rerouting itself needs work) — both
+become findings routed to a rule update or skill clarification.
 
 ## Cross-References
 

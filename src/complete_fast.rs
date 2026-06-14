@@ -41,7 +41,7 @@ use serde_json::{json, Value};
 
 use crate::ci;
 use crate::complete_preflight::{
-    check_learn_phase, check_pr_status, merge_main, resolve_mode, run_cmd_with_timeout,
+    check_pr_status, check_review_phase, merge_main, resolve_mode, run_cmd_with_timeout,
     COMPLETE_STEPS_TOTAL, NETWORK_TIMEOUT,
 };
 use crate::flow_paths::FlowPaths;
@@ -342,17 +342,17 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
 
     let (state, state_path) = read_state(&root, &branch)?;
 
-    // Gate: Learn phase must be complete
-    let learn_status = state
+    // Gate: Review phase must be complete
+    let review_status = state
         .get("phases")
-        .and_then(|p| p.get("flow-learn"))
+        .and_then(|p| p.get("flow-review"))
         .and_then(|l| l.get("status"))
         .and_then(|s| s.as_str())
         .unwrap_or("pending");
-    if learn_status != "complete" {
+    if review_status != "complete" {
         return Ok(json!({
             "status": "error",
-            "message": format!("Phase 5: Learn must be complete before Complete. Current status: {}", learn_status)
+            "message": format!("Phase 3: Review must be complete before Complete. Current status: {}", review_status)
         }));
     }
 
@@ -394,7 +394,7 @@ pub fn run_impl(args: &Args) -> Result<Value, String> {
     };
 
     let mode = resolve_mode(Some(&state));
-    let warnings = check_learn_phase(&state);
+    let warnings = check_review_phase(&state);
     let pr_number = state.get("pr_number").and_then(|v| v.as_i64());
     let pr_url = state
         .get("pr_url")

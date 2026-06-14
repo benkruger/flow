@@ -15,10 +15,10 @@ use flow_rs::state::{Phase, PhaseStatus};
 // --- Constants ---
 
 #[test]
-fn phase_order_has_five_phases() {
-    assert_eq!(PHASE_ORDER.len(), 5);
+fn phase_order_has_four_phases() {
+    assert_eq!(PHASE_ORDER.len(), 4);
     assert_eq!(PHASE_ORDER[0], "flow-start");
-    assert_eq!(PHASE_ORDER[4], "flow-complete");
+    assert_eq!(PHASE_ORDER[3], "flow-complete");
 }
 
 #[test]
@@ -26,14 +26,14 @@ fn phase_names_match_order() {
     let names = phase_names();
     assert_eq!(names.get("flow-start").unwrap(), "Start");
     assert_eq!(names.get("flow-review").unwrap(), "Review");
-    assert_eq!(names.len(), 5);
+    assert_eq!(names.len(), 4);
 }
 
 #[test]
 fn phase_numbers_are_one_indexed() {
     let nums = phase_numbers();
     assert_eq!(*nums.get("flow-start").unwrap(), 1);
-    assert_eq!(*nums.get("flow-complete").unwrap(), 5);
+    assert_eq!(*nums.get("flow-complete").unwrap(), 4);
 }
 
 #[test]
@@ -41,8 +41,7 @@ fn phase_number_returns_one_indexed() {
     assert_eq!(phase_number("flow-start"), 1);
     assert_eq!(phase_number("flow-code"), 2);
     assert_eq!(phase_number("flow-review"), 3);
-    assert_eq!(phase_number("flow-learn"), 4);
-    assert_eq!(phase_number("flow-complete"), 5);
+    assert_eq!(phase_number("flow-complete"), 4);
 }
 
 #[test]
@@ -56,7 +55,7 @@ fn commands_map_all_phases() {
     let cmds = commands();
     assert_eq!(cmds.get("flow-start").unwrap(), "/flow:flow-start");
     assert_eq!(cmds.get("flow-complete").unwrap(), "/flow:flow-complete");
-    assert_eq!(cmds.len(), 5);
+    assert_eq!(cmds.len(), 4);
 }
 
 // --- load_phase_config ---
@@ -66,11 +65,11 @@ fn load_phase_config_from_real_file() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let path = PathBuf::from(manifest_dir).join("flow-phases.json");
     let config = load_phase_config(&path).unwrap();
-    assert_eq!(config.order.len(), 5);
+    assert_eq!(config.order.len(), 4);
     assert_eq!(config.order[0], "flow-start");
     assert_eq!(config.names.get("flow-code").unwrap(), "Code");
     assert_eq!(config.commands.get("flow-code").unwrap(), "/flow:flow-code");
-    assert_eq!(*config.numbers.get("flow-complete").unwrap(), 5);
+    assert_eq!(*config.numbers.get("flow-complete").unwrap(), 4);
 }
 
 #[test]
@@ -202,9 +201,9 @@ fn build_initial_phases_rest_are_pending() {
 }
 
 #[test]
-fn build_initial_phases_has_five_entries() {
+fn build_initial_phases_has_four_entries() {
     let phases = build_initial_phases("2026-01-01T00:00:00-08:00");
-    assert_eq!(phases.len(), 5);
+    assert_eq!(phases.len(), 4);
 }
 
 #[test]
@@ -217,7 +216,6 @@ fn build_initial_phases_preserves_insertion_order() {
             &Phase::FlowStart,
             &Phase::FlowCode,
             &Phase::FlowReview,
-            &Phase::FlowLearn,
             &Phase::FlowComplete,
         ]
     );

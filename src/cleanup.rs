@@ -1,6 +1,6 @@
 //! Per-branch cleanup orchestrator for FLOW features.
 //!
-//! Used by `/flow:flow-complete` (Phase 5) and `/flow:flow-abort`.
+//! Used by `/flow:flow-complete` (Phase 4) and `/flow:flow-abort`.
 //! Closes the PR, removes the worktree, deletes the local and remote
 //! branches, removes the branch directory under `.flow-states/`, and
 //! sweeps the start-lock queue entry for the named branch.
@@ -416,7 +416,7 @@ pub fn cleanup(
         let _ = append_log(
             project_root,
             branch,
-            "[Phase 5] cleanup — in progress (branch directory will be removed next)",
+            "[Phase 4] cleanup — in progress (branch directory will be removed next)",
         );
     }
 

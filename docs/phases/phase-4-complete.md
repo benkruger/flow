@@ -1,9 +1,9 @@
 ---
-title: "Phase 5: Complete"
-nav_order: 6
+title: "Phase 4: Complete"
+nav_order: 5
 ---
 
-# Phase 5: Complete
+# Phase 4: Complete
 
 **Command:** `/flow-complete`
 
@@ -18,7 +18,7 @@ config — the single source of truth for skill autonomy. In manual mode
 (the default) it prompts for confirmation before the irreversible merge;
 in auto mode it skips confirmation and proceeds directly to merge and
 cleanup. Best-effort on cleanup steps — warns if the state file is missing or
-Phase 5 is incomplete.
+Phase 4 is incomplete.
 
 ---
 
@@ -92,7 +92,7 @@ rather than stranding the shell in a deleted directory.
 
 - Phase transition complete (records timing)
 - PR body rendering (What, Artifacts, Plan, Phase Timings, Token
-  Cost, Review Findings, Learn Findings, State File, Session Log,
+  Cost, Review Findings, State File, Session Log,
   Issues Filed)
 - Close referenced GitHub issues from the start prompt
 - Generate business-friendly summary (feature name, prompt,
@@ -130,7 +130,7 @@ removed, what was already gone, and what failed.
 
 ## What You Get
 
-By the end of Phase 5:
+By the end of Phase 4:
 
 - PR squash-merged into the integration branch
 - Referenced GitHub issues closed (extracted from the start prompt)
@@ -164,8 +164,8 @@ The skill is safe to re-invoke:
 
 | Scenario | Behavior |
 |---|---|
-| State file exists, Learn (Phase 4) complete | Normal merge and cleanup — no warnings |
-| State file exists, Learn (Phase 4) incomplete | Warns, proceeds (confirms in manual mode) |
+| State file exists, Review (Phase 3) complete | Normal merge and cleanup — no warnings |
+| State file exists, Review (Phase 3) incomplete | Warns, proceeds (confirms in manual mode) |
 | State file missing | Warns, infers from git, proceeds (confirms in manual mode) |
 | PR not open or merged | Hard block, does not proceed |
 
@@ -177,7 +177,7 @@ one fails, continue to the next.
 ## Gates
 
 - PR must be open or already merged — hard block if closed
-- Learn (Phase 4) complete is a warning, not a hard block
+- Review (Phase 3) complete is a warning, not a hard block
 - Missing state file is a warning, not a hard block
 - CI must pass before merge
 - Confirmation in manual mode (the default); skipped in auto mode

@@ -12,7 +12,6 @@ fn phase_serialize_all_variants() {
         (Phase::FlowStart, "\"flow-start\""),
         (Phase::FlowCode, "\"flow-code\""),
         (Phase::FlowReview, "\"flow-review\""),
-        (Phase::FlowLearn, "\"flow-learn\""),
         (Phase::FlowComplete, "\"flow-complete\""),
     ];
     for (variant, expected) in cases {
@@ -63,7 +62,7 @@ fn phase_as_indexmap_key() {
     map.insert(Phase::FlowCode, "code");
     assert_eq!(map.get(&Phase::FlowStart), Some(&"start"));
     assert_eq!(map.get(&Phase::FlowCode), Some(&"code"));
-    assert_eq!(map.get(&Phase::FlowLearn), None);
+    assert_eq!(map.get(&Phase::FlowReview), None);
 }
 
 #[test]
@@ -85,7 +84,7 @@ fn phase_debug_format() {
 
 #[test]
 fn phase_copy_semantics() {
-    let p = Phase::FlowLearn;
+    let p = Phase::FlowReview;
     let q = p;
     assert_eq!(p, q);
 }

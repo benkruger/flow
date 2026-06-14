@@ -535,7 +535,7 @@ the last line" — not "parse the JSON output."
 ## Truncation Detection Marker Contracts
 
 When a skill checks agent output for expected structural markers
-(e.g. truncation detection in flow-learn), those marker strings
+(e.g. truncation detection in flow-review), those marker strings
 are implicit contracts with the agent's Output Format section. If
 the agent's output format changes, the skill's detection markers
 must be updated in the same commit. Add a comment in the skill

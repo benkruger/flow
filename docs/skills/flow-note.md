@@ -48,7 +48,8 @@ The note is captured before Claude replies.
 ```
 
 Notes are stored in `state["notes"]` — they survive compaction and
-session restarts. Learn reads them as one of its primary sources.
+session restarts, and surface in the Complete-phase PR body and the
+TUI.
 
 ---
 
@@ -56,4 +57,4 @@ session restarts. Learn reads them as one of its primary sources.
 
 - Written as reusable patterns, not specific complaints
 - Silent if no feature is in progress — never blocks a session
-- Used by Learn as a guaranteed record that survives compaction
+- A guaranteed record that survives compaction and session restarts

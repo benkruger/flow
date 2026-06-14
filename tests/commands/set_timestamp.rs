@@ -35,7 +35,6 @@ fn flow_rs() -> Command {
 fn is_step_counter_field_returns_true_for_each_named_field() {
     assert!(is_step_counter_field("code_task"));
     assert!(is_step_counter_field("review_step"));
-    assert!(is_step_counter_field("learn_step"));
     assert!(is_step_counter_field("complete_step"));
 }
 
@@ -44,6 +43,7 @@ fn is_step_counter_field_returns_true_for_each_named_field() {
 #[test]
 fn is_step_counter_field_returns_false_for_non_step_fields() {
     assert!(!is_step_counter_field(""));
+    assert!(!is_step_counter_field("learn_step"));
     assert!(!is_step_counter_field("code_task_name"));
     assert!(!is_step_counter_field("files.plan"));
     assert!(!is_step_counter_field("_continue_pending"));

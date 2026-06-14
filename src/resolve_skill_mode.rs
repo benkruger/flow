@@ -12,10 +12,9 @@
 //!
 //! Only the block (object) shape is parsed. A bare-string
 //! `skills.<name>` entry, a missing entry, or a wrong-type entry
-//! resolves each axis to the per-skill default — `flow-learn` is
-//! fully autonomous (`auto`/`auto`), every other skill is `manual`
-//! on both axes, the conservative direction that asks the user
-//! before proceeding. See [`default_mode`].
+//! resolves each axis to the per-skill default — every skill is
+//! `manual` on both axes, the conservative direction that asks the
+//! user before proceeding. See [`default_mode`].
 //!
 //! Read-only: no `cwd_scope::enforce` call. Per
 //! `.claude/rules/external-input-validation.md` and
@@ -72,7 +71,6 @@ pub const ALLOWED_SKILLS: &[&str] = &[
     "flow-start",
     "flow-code",
     "flow-review",
-    "flow-learn",
     "flow-complete",
     "flow-abort",
 ];
@@ -101,17 +99,14 @@ pub fn normalize_gate_input(s: &str) -> String {
 /// or `"manual"`.
 const MODE_VALUES: &[&str] = &["auto", "manual"];
 
-/// Per-skill default `(commit, continue)` mode. `flow-learn` is fully
-/// autonomous by default; every other skill defaults to `manual` on
-/// both axes — the conservative direction that asks the user before
-/// proceeding. Applied whenever the `skills.<skill>` config is
-/// missing, the wrong type, a bare string, or carries an unparseable
-/// axis value.
-fn default_mode(skill: &str) -> (&'static str, &'static str) {
-    match skill {
-        "flow-learn" => ("auto", "auto"),
-        _ => ("manual", "manual"),
-    }
+/// Per-skill default `(commit, continue)` mode. Every skill defaults
+/// to `manual` on both axes — the conservative direction that asks the
+/// user before proceeding. Applied whenever the `skills.<skill>` config
+/// is missing, the wrong type, a bare string, or carries an unparseable
+/// axis value. The parameter is retained so a future skill that needs a
+/// non-default mode can fork on the skill name.
+fn default_mode(_skill: &str) -> (&'static str, &'static str) {
+    ("manual", "manual")
 }
 
 /// Resolve one axis (`"commit"` or `"continue"`) of a `skills.<skill>`

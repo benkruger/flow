@@ -117,7 +117,7 @@ Fix all real findings, run `bin/flow ci`, commit once.
 ## bin/flow ci Rule
 
 `bin/flow ci` runs after all fixes in Step 4. Review does not
-transition to Learn until `bin/flow ci` is green.
+transition to Complete until `bin/flow ci` is green.
 
 ---
 
@@ -129,5 +129,5 @@ transition to Learn until `bin/flow ci` is green.
 
 ## What Comes Next
 
-Phase 4: Learn (`/flow-learn`) — audit rule compliance and identify
-process gaps before the PR is merged.
+Phase 4: Complete (`/flow-complete`) — merge the PR, remove the
+worktree, and delete the state file.

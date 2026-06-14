@@ -180,7 +180,7 @@ fn capture(args: &Args, root: &Path, cwd: &Path) -> Result<Value, String> {
     });
     // Omit `family_slices` entirely when no `--family` was passed so the
     // envelope stays byte-compatible with callers that never slice
-    // (e.g. flow-learn captures the substantive diff with no family).
+    // (a caller that captures the substantive diff with no family).
     if !family_slices.is_empty() {
         envelope["family_slices"] = Value::Array(family_slices);
     }

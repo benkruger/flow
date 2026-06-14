@@ -155,7 +155,7 @@ pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
     ];
     match run_cmd_with_timeout(&pt_args, NETWORK_TIMEOUT) {
         Err(e) => {
-            log("[Phase 5] complete-post-merge — phase-transition (error)");
+            log("[Phase 4] complete-post-merge — phase-transition (error)");
             failures.insert("phase_transition".to_string(), json!(e));
         }
         Ok((_code, stdout, stderr)) => {
@@ -172,11 +172,11 @@ pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
                         .unwrap_or(0);
                     result.insert("formatted_time".to_string(), json!(formatted_time));
                     result.insert("cumulative_seconds".to_string(), json!(cumulative_seconds));
-                    log("[Phase 5] complete-post-merge — phase-transition (ok)");
+                    log("[Phase 4] complete-post-merge — phase-transition (ok)");
                 }
                 _ => {
                     let msg = parse_err.unwrap_or_else(|| stderr.trim().to_string());
-                    log("[Phase 5] complete-post-merge — phase-transition (failed)");
+                    log("[Phase 4] complete-post-merge — phase-transition (failed)");
                     failures.insert("phase_transition".to_string(), json!(msg));
                 }
             }
@@ -195,15 +195,15 @@ pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
     ];
     match run_cmd_with_timeout(&render_args, NETWORK_TIMEOUT) {
         Err(e) => {
-            log("[Phase 5] complete-post-merge — render-pr-body (error)");
+            log("[Phase 4] complete-post-merge — render-pr-body (error)");
             failures.insert("render_pr_body".to_string(), json!(e));
         }
         Ok((code, _, stderr)) => {
             if code != 0 {
-                log("[Phase 5] complete-post-merge — render-pr-body (failed)");
+                log("[Phase 4] complete-post-merge — render-pr-body (failed)");
                 failures.insert("render_pr_body".to_string(), json!(stderr.trim()));
             } else {
-                log("[Phase 5] complete-post-merge — render-pr-body (ok)");
+                log("[Phase 4] complete-post-merge — render-pr-body (ok)");
             }
         }
     }
@@ -251,7 +251,7 @@ pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
     }
     result.insert("closed_issues".to_string(), json!(closed_issues.clone()));
     log(&format!(
-        "[Phase 5] complete-post-merge — close-issues ({} closed)",
+        "[Phase 4] complete-post-merge — close-issues ({} closed)",
         closed_issues.len(),
     ));
 
@@ -359,7 +359,7 @@ pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
         .map(String::from);
 
     if let Some(ref thread_ts) = slack_thread_ts {
-        let msg = format!("Phase 5: Complete finished for PR #{}", pr_number);
+        let msg = format!("Phase 4: Complete finished for PR #{}", pr_number);
         let slack_args = [
             bin_flow.as_str(),
             "notify-slack",
@@ -424,7 +424,7 @@ pub fn post_merge(pr_number: i64, state_file: &str, branch: &str) -> Value {
     let failure_count = failures.len();
     result.insert("failures".to_string(), Value::Object(failures));
     log(&format!(
-        "[Phase 5] complete-post-merge — done ({} failures)",
+        "[Phase 4] complete-post-merge — done ({} failures)",
         failure_count,
     ));
     Value::Object(result)

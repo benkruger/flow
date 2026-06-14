@@ -53,7 +53,7 @@ already closed, worktree already removed), it continues to the next.
 
 - You started a feature and decided not to pursue it
 - The approach is fundamentally wrong and you want a clean slate
-- You want to abandon work without going through Review and Learn
+- You want to abandon work without going through Review and Complete
 
 ---
 
@@ -61,7 +61,7 @@ already closed, worktree already removed), it continues to the next.
 
 | | `/flow-complete` | `/flow-abort` |
 |---|---|---|
-| **When** | After Learn (Phase 5: Complete) | Any phase |
+| **When** | After Review (Phase 4: Complete) | Any phase |
 | **PR** | Squash-merged into main | Closed |
 | **Remote branch** | Auto-deleted by GitHub | Deleted (via cleanup) |
 | **Worktree** | Removed | Removed |

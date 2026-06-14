@@ -17,18 +17,12 @@ use serde_json::{json, Value};
 
 mod common;
 
-const PHASE_NAMES_LIST: [&str; 5] = ["Start", "Code", "Review", "Learn", "Complete"];
+const PHASE_NAMES_LIST: [&str; 4] = ["Start", "Code", "Review", "Complete"];
 
 fn all_complete_state() -> Value {
     let mut phases = serde_json::Map::new();
-    let all_phases = [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ];
-    let timings = [20, 2700, 720, 120, 45];
+    let all_phases = ["flow-start", "flow-code", "flow-review", "flow-complete"];
+    let timings = [20, 2700, 720, 45];
     for (i, &p) in all_phases.iter().enumerate() {
         phases.insert(
             p.to_string(),
@@ -70,7 +64,7 @@ use common::{add_phase_snapshots, snapshot_value};
 /// snapshots — the state shape the fixed `start_init`,
 /// `complete_finalize`, and `complete_fast` writers produce —
 /// `phase_delta` returns `Some(_)` for every phase, and the Token
-/// Cost section renders real token + cost data for all five rows.
+/// Cost section renders real token + cost data for all four rows.
 /// Without the dual write, the renderer's None branch produced a
 /// placeholder row with tokens=0 and cost=`—` for any phase whose
 /// snapshot pair was missing.
@@ -78,7 +72,7 @@ use common::{add_phase_snapshots, snapshot_value};
 /// Depends on the fixes in Tasks 2 (start_init), 4 (complete_finalize),
 /// and 6 (complete_fast); locks in the end-to-end summary contract.
 #[test]
-fn summary_shows_data_for_all_five_phases_when_capture_complete() {
+fn summary_shows_data_for_all_four_phases_when_capture_complete() {
     let mut state = all_complete_state();
     // Populate every phase with enter+complete snapshots so
     // `phase_delta` returns `Some(_)` for each one. The scaling
@@ -88,7 +82,6 @@ fn summary_shows_data_for_all_five_phases_when_capture_complete() {
     add_phase_snapshots(&mut state, "flow-start", 0, 5);
     add_phase_snapshots(&mut state, "flow-code", 5, 15);
     add_phase_snapshots(&mut state, "flow-review", 15, 20);
-    add_phase_snapshots(&mut state, "flow-learn", 20, 25);
     add_phase_snapshots(&mut state, "flow-complete", 25, 30);
 
     let result = format_complete_summary(&state, None);
@@ -309,13 +302,7 @@ fn token_cost_section_format_tokens_covers_small_and_million_ranges() {
 fn token_cost_section_omitted_only_when_no_phases_have_run() {
     let mut state = all_complete_state();
     // Reset every phase to pending so no phase has run.
-    for key in [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ] {
+    for key in ["flow-start", "flow-code", "flow-review", "flow-complete"] {
         state["phases"][key]["status"] = json!("pending");
     }
     let result = format_complete_summary(&state, None);
@@ -440,7 +427,7 @@ fn token_cost_section_total_not_partial_when_every_phase_has_cost() {
     // skip; flow-code is the only running phase and has populated
     // snapshots → cost is Some → total_partial stays false.
     let mut state = all_complete_state();
-    for key in ["flow-start", "flow-review", "flow-learn", "flow-complete"] {
+    for key in ["flow-start", "flow-review", "flow-complete"] {
         state["phases"][key]["status"] = json!("pending");
     }
     add_phase_snapshots(&mut state, "flow-code", 0, 5);
@@ -493,13 +480,12 @@ fn format_complete_summary_renders_dash_for_unpriced_cost() {
     let mut state = all_complete_state();
     // Code phase: priced opus model — pair_delta returns Some(cost).
     add_phase_snapshots(&mut state, "flow-code", 0, 5);
-    // Review/Learn phases: an unpriced model family. The token delta
+    // Review phase: an unpriced model family. The token delta
     // is real (non-zero) but unprice-able, so pair_delta returns
     // None for cost and the row renders `—`.
-    for phase in ["flow-review", "flow-learn"] {
-        state["phases"][phase]["window_at_enter"] = snapshot_value("S1", 7, "gpt-4o-unpriced");
-        state["phases"][phase]["window_at_complete"] = snapshot_value("S1", 12, "gpt-4o-unpriced");
-    }
+    let phase = "flow-review";
+    state["phases"][phase]["window_at_enter"] = snapshot_value("S1", 7, "gpt-4o-unpriced");
+    state["phases"][phase]["window_at_complete"] = snapshot_value("S1", 12, "gpt-4o-unpriced");
 
     let result = format_complete_summary(&state, None);
 
@@ -518,23 +504,22 @@ fn format_complete_summary_renders_dash_for_unpriced_cost() {
         .split_once("\n\n")
         .map(|(section, _)| section)
         .unwrap_or(after_header);
-    for phase_label in ["Review:", "Learn:"] {
-        let row = token_section
-            .lines()
-            .find(|line| line.contains(phase_label))
-            .unwrap_or_else(|| {
-                panic!(
-                    "missing `{}` row in Token Cost section:\n{}",
-                    phase_label, token_section
-                )
-            });
-        assert!(
-            row.ends_with('—'),
-            "row for `{}` must end in the em-dash that signals frozen cost; got `{}`",
-            phase_label,
-            row
-        );
-    }
+    let phase_label = "Review:";
+    let row = token_section
+        .lines()
+        .find(|line| line.contains(phase_label))
+        .unwrap_or_else(|| {
+            panic!(
+                "missing `{}` row in Token Cost section:\n{}",
+                phase_label, token_section
+            )
+        });
+    assert!(
+        row.ends_with('—'),
+        "row for `{}` must end in the em-dash that signals frozen cost; got `{}`",
+        phase_label,
+        row
+    );
     // The frozen rows contributed None cost, so the total carries
     // the partial marker and the footnote appears.
     assert!(
@@ -553,19 +538,18 @@ fn format_complete_summary_renders_dash_for_unpriced_cost() {
 // extracted helper directly so coverage of the structural API is
 // independent of the formatter that consumes it.
 
-/// Full state with snapshots for every phase produces five rows and
+/// Full state with snapshots for every phase produces four rows and
 /// totals that match the per-phase sums.
 #[test]
-fn compute_cost_breakdown_full_data_returns_all_five_phase_rows() {
+fn compute_cost_breakdown_full_data_returns_all_four_phase_rows() {
     let mut state = all_complete_state();
     add_phase_snapshots(&mut state, "flow-start", 0, 5);
     add_phase_snapshots(&mut state, "flow-code", 5, 15);
     add_phase_snapshots(&mut state, "flow-review", 15, 20);
-    add_phase_snapshots(&mut state, "flow-learn", 20, 25);
     add_phase_snapshots(&mut state, "flow-complete", 25, 30);
 
     let breakdown = compute_cost_breakdown(&state).expect("breakdown");
-    assert_eq!(breakdown.rows.len(), 5, "five phase rows");
+    assert_eq!(breakdown.rows.len(), 4, "four phase rows");
 
     let summed_tokens: i64 = breakdown.rows.iter().map(|r| r.tokens).sum();
     assert_eq!(breakdown.total_tokens, summed_tokens, "totals match sum");
@@ -595,7 +579,6 @@ fn compute_cost_breakdown_each_row_cost_matches_tokens_priced() {
         ("flow-start", "Start", 0, 5),
         ("flow-code", "Code", 5, 15),
         ("flow-review", "Review", 15, 20),
-        ("flow-learn", "Learn", 20, 25),
         ("flow-complete", "Complete", 25, 30),
     ];
     let mut state = all_complete_state();
@@ -658,13 +641,7 @@ fn compute_cost_breakdown_returns_none_when_phases_empty() {
 #[test]
 fn compute_cost_breakdown_returns_none_when_all_phases_pending() {
     let mut state = all_complete_state();
-    for key in [
-        "flow-start",
-        "flow-code",
-        "flow-review",
-        "flow-learn",
-        "flow-complete",
-    ] {
+    for key in ["flow-start", "flow-code", "flow-review", "flow-complete"] {
         state["phases"][key]["status"] = json!("pending");
     }
     assert!(compute_cost_breakdown(&state).is_none());
@@ -682,7 +659,7 @@ fn compute_cost_breakdown_marks_partial_when_cost_missing() {
     state["phases"]["flow-code"]["window_at_enter"] = enter;
     state["phases"]["flow-code"]["window_at_complete"] = complete;
     // Drop the other phases so flow-code is the only contributor.
-    for key in ["flow-start", "flow-review", "flow-learn", "flow-complete"] {
+    for key in ["flow-start", "flow-review", "flow-complete"] {
         state["phases"][key]["status"] = json!("pending");
     }
 
@@ -755,8 +732,7 @@ fn compute_cost_breakdown_normalizes_status_case_and_whitespace() {
     state["phases"]["flow-start"]["status"] = json!("PENDING");
     state["phases"]["flow-code"]["status"] = json!("Pending");
     state["phases"]["flow-review"]["status"] = json!("pending ");
-    state["phases"]["flow-learn"]["status"] = json!(" pending");
-    state["phases"]["flow-complete"]["status"] = json!("pending");
+    state["phases"]["flow-complete"]["status"] = json!(" pending");
 
     assert!(
         compute_cost_breakdown(&state).is_none(),
@@ -776,7 +752,7 @@ fn compute_cost_breakdown_treats_empty_string_status_as_pending() {
     // phases stay "complete" so they would contribute rows if
     // the gate is correct. We want to verify the empty-string
     // status specifically skips flow-code.
-    for key in ["flow-start", "flow-review", "flow-learn", "flow-complete"] {
+    for key in ["flow-start", "flow-review", "flow-complete"] {
         state["phases"][key]["status"] = json!("pending");
     }
     state["phases"]["flow-code"]["status"] = json!("");
@@ -810,7 +786,7 @@ fn basic_summary() {
         );
     }
     assert!(result.summary.contains("Total:"));
-    assert_eq!(result.total_seconds, 20 + 2700 + 720 + 120 + 45);
+    assert_eq!(result.total_seconds, 20 + 2700 + 720 + 45);
 }
 
 #[test]
@@ -821,8 +797,8 @@ fn summary_with_issues() {
             "label": "Rule",
             "title": "Test rule",
             "url": "https://github.com/test/test/issues/1",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
+            "phase": "flow-review",
+            "phase_name": "Review",
             "timestamp": "2026-01-01T00:00:00-08:00",
         },
         {
@@ -862,8 +838,8 @@ fn summary_with_single_issue() {
             "label": "Tech Debt",
             "title": "Fix routing logic",
             "url": "https://github.com/test/test/issues/42",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
+            "phase": "flow-review",
+            "phase_name": "Review",
             "timestamp": "2026-01-01T00:00:00-08:00",
         },
     ]);
@@ -890,8 +866,8 @@ fn summary_with_issues_url_without_number() {
             "label": "Rule",
             "title": "Some rule",
             "url": "https://example.com/custom-path",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
+            "phase": "flow-review",
+            "phase_name": "Review",
             "timestamp": "2026-01-01T00:00:00-08:00",
         },
     ]);
@@ -997,8 +973,8 @@ fn summary_with_filed_issue_without_url() {
         {
             "label": "Rule",
             "title": "URL-less rule",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
+            "phase": "flow-review",
+            "phase_name": "Review",
             "timestamp": "2026-01-01T00:00:00-08:00",
         },
     ]);
@@ -1353,30 +1329,47 @@ fn summary_with_review_findings() {
         .contains("False positive from macro expansion"));
 }
 
+/// `outcome_marker` and `outcome_label` are general finding-rendering
+/// infrastructure: they map every outcome the add-finding CLI accepts
+/// (`VALID_OUTCOMES` in `src/add_finding.rs`) to a marker + label,
+/// independent of which phase recorded the finding. This exercises the
+/// `rule_written` / `rule_clarified` arms (marker `+`, labels
+/// "Rule written" / "Rule clarified") through the Review Findings
+/// section so the mapping stays covered.
 #[test]
-fn summary_with_learn_findings() {
+fn summary_renders_rule_outcome_marker_and_labels() {
     let mut state = all_complete_state();
     state["findings"] = json!([
         {
-            "finding": "No rule for error handling",
-            "reason": "Gap identified during analysis",
+            "finding": "Added a rule",
+            "reason": "New constraint",
             "outcome": "rule_written",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
-            "path": ".claude/rules/error-handling.md",
-            "timestamp": "2026-01-01T00:45:00-08:00",
+            "phase": "flow-review",
+            "phase_name": "Review",
+            "path": ".claude/rules/new.md",
+            "timestamp": "2026-01-01T00:30:00-08:00",
+        },
+        {
+            "finding": "Clarified a rule",
+            "reason": "Tightened wording",
+            "outcome": "rule_clarified",
+            "phase": "flow-review",
+            "phase_name": "Review",
+            "path": ".claude/rules/existing.md",
+            "timestamp": "2026-01-01T00:31:00-08:00",
         },
     ]);
 
     let result = format_complete_summary(&state, None);
 
-    assert!(result.summary.contains("Learn Findings"));
-    assert!(result.summary.contains("No rule for error handling"));
+    assert!(result.summary.contains("Review Findings"));
     assert!(result.summary.contains("+"));
+    assert!(result.summary.contains("Rule written"));
+    assert!(result.summary.contains("Rule clarified"));
 }
 
 #[test]
-fn summary_with_both_phase_findings() {
+fn summary_review_findings_only_no_learn_section() {
     let mut state = all_complete_state();
     state["findings"] = json!([
         {
@@ -1387,20 +1380,12 @@ fn summary_with_both_phase_findings() {
             "phase_name": "Review",
             "timestamp": "2026-01-01T00:30:00-08:00",
         },
-        {
-            "finding": "Missing rule",
-            "reason": "Created new rule",
-            "outcome": "rule_written",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
-            "timestamp": "2026-01-01T00:45:00-08:00",
-        },
     ]);
 
     let result = format_complete_summary(&state, None);
 
     assert!(result.summary.contains("Review Findings"));
-    assert!(result.summary.contains("Learn Findings"));
+    assert!(!result.summary.contains("Learn Findings"));
 }
 
 #[test]
@@ -1410,12 +1395,10 @@ fn summary_no_findings_hides_sections() {
 
     let result_empty = format_complete_summary(&state, None);
     assert!(!result_empty.summary.contains("Review Findings"));
-    assert!(!result_empty.summary.contains("Learn Findings"));
 
     let state_no_key = all_complete_state();
     let result_missing = format_complete_summary(&state_no_key, None);
     assert!(!result_missing.summary.contains("Review Findings"));
-    assert!(!result_missing.summary.contains("Learn Findings"));
 }
 
 #[test]
@@ -1447,31 +1430,13 @@ fn summary_findings_all_outcomes() {
             "issue_url": "https://github.com/test/test/issues/99",
             "timestamp": "2026-01-01T00:32:00-08:00",
         },
-        {
-            "finding": "f4",
-            "reason": "r4",
-            "outcome": "rule_written",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
-            "path": ".claude/rules/test.md",
-            "timestamp": "2026-01-01T00:33:00-08:00",
-        },
-        {
-            "finding": "f5",
-            "reason": "r5",
-            "outcome": "rule_clarified",
-            "phase": "flow-learn",
-            "phase_name": "Learn",
-            "path": ".claude/rules/existing.md",
-            "timestamp": "2026-01-01T00:34:00-08:00",
-        },
     ]);
 
     let result = format_complete_summary(&state, None);
     assert!(result.summary.contains("✓"));
     assert!(result.summary.contains("✗"));
     assert!(result.summary.contains("→"));
-    assert!(result.summary.find("Learn Findings").is_some());
+    assert!(result.summary.contains("Review Findings"));
 }
 
 #[test]
@@ -1518,7 +1483,7 @@ fn format_findings_markdown_no_phase_match_returns_empty_string() {
         "finding": "Missing rule for X",
         "reason": "Captured during analysis",
         "outcome": "rule_written",
-        "phase": "flow-learn",
+        "phase": "flow-code",
     })];
     let out = format_findings_markdown(&findings, "flow-review");
     assert_eq!(out, "");
@@ -1612,17 +1577,17 @@ fn format_findings_markdown_filters_by_phase() {
             "phase": "flow-review",
         }),
         json!({
-            "finding": "learn-only",
+            "finding": "code-only",
             "reason": "r2",
             "outcome": "rule_written",
-            "phase": "flow-learn",
+            "phase": "flow-code",
         }),
     ];
     let out = format_findings_markdown(&findings, "flow-review");
     assert!(out.contains("**review-only**"), "review entry must appear");
     assert!(
-        !out.contains("**learn-only**"),
-        "learn entry must NOT appear when filtering for flow-review; got:\n{}",
+        !out.contains("**code-only**"),
+        "non-review entry must NOT appear when filtering for flow-review; got:\n{}",
         out
     );
 }

@@ -95,22 +95,22 @@ Ask the user how much autonomy FLOW should have using AskUserQuestion:
 **Fully autonomous** — all auto:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": {"continue": "auto"}, "flow-abort": {"continue": "auto"}}
+{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-complete": {"continue": "auto"}, "flow-abort": {"continue": "auto"}}
 ```
 
 **Fully manual** — all manual:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-review": {"commit": "manual", "continue": "manual"}, "flow-learn": {"commit": "manual", "continue": "manual"}, "flow-complete": {"continue": "manual"}, "flow-abort": {"continue": "manual"}}
+{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "manual", "continue": "manual"}, "flow-review": {"commit": "manual", "continue": "manual"}, "flow-complete": {"continue": "manual"}, "flow-abort": {"continue": "manual"}}
 ```
 
 **Recommended** — safe defaults:
 
 ```json
-{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-learn": {"commit": "auto", "continue": "auto"}, "flow-complete": {"continue": "manual"}, "flow-abort": {"continue": "manual"}}
+{"flow-start": {"continue": "auto"}, "flow-code": {"commit": "auto", "continue": "auto"}, "flow-review": {"commit": "auto", "continue": "auto"}, "flow-complete": {"continue": "manual"}, "flow-abort": {"continue": "manual"}}
 ```
 
-**Customize** — ask per skill, in this order: code, review, learn, complete, abort.
+**Customize** — ask per skill, in this order: code, review, complete, abort.
 
 Start is exempt from the Customize loop because every preset fixes its continue mode to `auto` — Start has no useful interaction to gate on, so prompting for it would only add friction. Before asking the per-skill questions below, **seed `skills_dict` with `{"flow-start": {"continue": "auto"}}`** so the resulting JSON carries Start's continue mode through to Step 3.
 
@@ -144,22 +144,6 @@ First question:
 Second question:
 
 > "Continue mode for /flow:flow-review? (controls phase advancement)"
->
-> - **Auto (Recommended)** — "Auto-advance to next phase"
-> - **Manual** — "Prompt before advancing"
-
-For **learning** (commit and continue), ask two AskUserQuestions:
-
-First question:
-
-> "Commit mode for /flow:flow-learn? (controls per-task review before each commit)"
->
-> - **Auto (Recommended)** — "Skip approval prompts"
-> - **Manual** — "Require explicit approval"
-
-Second question:
-
-> "Continue mode for /flow:flow-learn? (controls phase advancement)"
 >
 > - **Auto (Recommended)** — "Auto-advance to next phase"
 > - **Manual** — "Prompt before advancing"
@@ -343,7 +327,6 @@ All universal permissions written to `.claude/settings.json` for reference:
       "Agent(flow:ci-fixer)",
       "Agent(flow:cto)",
       "Agent(flow:documentation)",
-      "Agent(flow:learn-analyst)",
       "Agent(flow:pm)",
       "Agent(flow:pre-mortem)",
       "Agent(flow:reviewer)",
@@ -357,7 +340,6 @@ All universal permissions written to `.claude/settings.json` for reference:
       "Skill(flow:flow-explore)",
       "Skill(flow:flow-hygiene)",
       "Skill(flow:flow-issues)",
-      "Skill(flow:flow-learn)",
       "Skill(flow:flow-note)",
       "Skill(flow:flow-orchestrate)",
       "Skill(flow:flow-plan)",

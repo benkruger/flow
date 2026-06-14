@@ -40,16 +40,6 @@ pub fn step_names() -> HashMap<&'static str, HashMap<i64, &'static str>> {
     review.insert(4, "agent reviews");
     map.insert("flow-review", review);
 
-    let mut learn = HashMap::new();
-    learn.insert(1, "gathering sources");
-    learn.insert(2, "synthesizing");
-    learn.insert(3, "applying learnings");
-    learn.insert(4, "promoting perms");
-    learn.insert(5, "committing");
-    learn.insert(6, "filing issues");
-    learn.insert(7, "presenting report");
-    map.insert("flow-learn", learn);
-
     let mut complete = HashMap::new();
     complete.insert(1, "running checks");
     complete.insert(2, "local CI");
@@ -151,15 +141,10 @@ pub fn phase_step_counter(state: &Value) -> Option<PhaseStepCounter> {
                 .unwrap_or(0);
             ("Review", 3, cur, tot, lookup_name(cur))
         }
-        "flow-learn" => {
-            let cur = read(state, "learn_step")?;
-            let tot = read(state, "learn_steps_total").unwrap_or(0);
-            ("Learn", 4, cur, tot, lookup_name(cur))
-        }
         "flow-complete" => {
             let cur = read(state, "complete_step")?;
             let tot = read(state, "complete_steps_total").unwrap_or(0);
-            ("Complete", 5, cur, tot, lookup_name(cur))
+            ("Complete", 4, cur, tot, lookup_name(cur))
         }
         _ => return None,
     };
@@ -238,14 +223,6 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
         .unwrap_or("");
     let review_step = state
         .get("review_step")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let learn_step = state
-        .get("learn_step")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-    let learn_steps_total = state
-        .get("learn_steps_total")
         .and_then(|v| v.as_i64())
         .unwrap_or(0);
     let complete_step = state
@@ -358,14 +335,6 @@ pub fn phase_timeline(state: &Value, now: Option<DateTime<FixedOffset>>) -> Vec<
             } else {
                 String::new()
             }
-        } else if key == "flow-learn" {
-            let display_step = learn_step + 1;
-            let sn = all_step_names
-                .get("flow-learn")
-                .and_then(|m| m.get(&display_step))
-                .copied()
-                .unwrap_or("");
-            step_annotation(display_step, learn_steps_total, sn)
         } else {
             // PHASE_ORDER guarantees the only remaining key here is
             // "flow-complete" (the prior arms cover every other phase).

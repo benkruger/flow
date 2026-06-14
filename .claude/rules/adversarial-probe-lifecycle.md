@@ -8,7 +8,7 @@ listed in `src/prime_check.rs::EXCLUDE_ENTRIES` so `git add -A`
 never stages it, and
 `tests/structural.rs::adversarial_probe_must_not_be_tracked`
 asserts the invariant against `git ls-files`. The probe is
-disposed of at Phase 5 Complete by
+disposed of at Phase 4 Complete by
 `src/cleanup.rs::delete_adversarial_probe` via `fs::remove_file`,
 before `git worktree remove` runs.
 

@@ -274,14 +274,14 @@ fn test_validate_auto_continue_without_skills_auto() {
 fn test_validate_block_message_names_phase() {
     let dir = tempfile::tempdir().unwrap();
     let state = json!({
-        "current_phase": "flow-learn",
+        "current_phase": "flow-review",
         "branch": "test",
-        "skills": {"flow-learn": {"continue": "auto"}},
-        "phases": {"flow-learn": {"status": "in_progress"}},
+        "skills": {"flow-review": {"continue": "auto"}},
+        "phases": {"flow-review": {"status": "in_progress"}},
     });
     let path = write_state(dir.path(), "test", &state);
     let (_allowed, msg, _resp) = validate(Some(&path));
-    assert!(msg.contains("flow-learn"));
+    assert!(msg.contains("flow-review"));
 }
 
 #[test]
