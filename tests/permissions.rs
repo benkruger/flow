@@ -170,6 +170,13 @@ const PLACEHOLDER_SUBS: &[(&str, &str)] = &[
         "<test_command>",
         "bin/test .flow-states/test-branch-adversarial_test.py",
     ),
+    // Consumed by skills/flow-review/SKILL.md Step 1: the absolute
+    // plugin `bin/flow` path resolved via `bin/flow plugin-bin-flow`
+    // and substituted into the adversarial runner command
+    // (`<flow_cli> ci --test --file <temp_test_file>`). Substituting
+    // `bin/flow` keeps the resolved command matching the
+    // `Bash(*bin/flow *)` allow-list pattern.
+    ("<flow_cli>", "bin/flow"),
     // Consumed by skills/flow-prime/SKILL.md role-selection step's
     // `--role <role_value>` invocation. The role-selection step
     // resolves the placeholder to one of the concrete role names
