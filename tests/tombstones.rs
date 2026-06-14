@@ -1974,6 +1974,27 @@ fn test_state_no_learn_steps_total_field() {
     );
 }
 
+/// Tombstone: removed in PR #1897. The bare `learn_step` state field is
+/// gone from `src/state.rs`. Must not return.
+///
+/// Stability argument: `learn_step` is a Rust struct-field identifier
+/// that must appear verbatim (as `learn_step:`) in source to compile —
+/// no `concat!`, `format!`, or named constant can synthesize a struct
+/// field name. The `learn_steps_total` tombstone is a strict superstring
+/// of `learn_step` and does NOT fire on a resurrection of only the bare
+/// field, so this dedicated check anchors on `learn_step:` (with the
+/// colon) to match the field declaration without double-firing on
+/// `learn_steps_total:`.
+#[test]
+fn test_state_no_learn_step_field() {
+    let content = fs::read_to_string(common::repo_root().join("src").join("state.rs"))
+        .expect("src/state.rs must exist");
+    assert!(
+        !content.contains("learn_step:"),
+        "src/state.rs must not declare the bare `learn_step` field"
+    );
+}
+
 /// Tombstone: removed in PR #1897. The `flow-learn` config axis is gone
 /// from `flow-phases.json`. Must not return.
 ///
