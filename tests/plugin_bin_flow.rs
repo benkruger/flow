@@ -112,3 +112,55 @@ fn plugin_bin_flow_errors_when_root_not_absolute() {
         "stdout must be empty on the error path"
     );
 }
+
+#[test]
+fn plugin_bin_flow_trims_surrounding_whitespace_in_root() {
+    // A trailing-whitespace root (e.g. an env value with a stray
+    // newline) must resolve to the same clean path the trimmed
+    // agent_prompt_scan carve-out admits — not a space-bearing path the
+    // carve-out could never match.
+    let output = run_plugin_bin_flow(Some("  /abs/plugin/root  "));
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "/abs/plugin/root/bin/flow\n"
+    );
+}
+
+// --- run_impl hygiene (unit) ---
+//
+// These call `run_impl` directly so the NUL-strip + trim hygiene is
+// covered for inputs a subprocess env value cannot carry (an interior
+// NUL is rejected by `Command::env`). `run_impl` is pure over its
+// argument, so no ambient-env neutralization is needed.
+
+#[test]
+fn run_impl_strips_nul_bytes_matching_the_carveout() {
+    let (path, code) = flow_rs::plugin_bin_flow::run_impl(Some("/abs/plugin\0root"))
+        .expect("absolute root resolves");
+    assert_eq!(code, 0);
+    assert!(
+        !path.contains('\0'),
+        "run_impl must strip NUL bytes so its path matches the NUL-stripping carve-out; got {path:?}"
+    );
+    assert_eq!(path, "/abs/pluginroot/bin/flow");
+}
+
+#[test]
+fn run_impl_trims_whitespace_matching_the_carveout() {
+    let (path, _) = flow_rs::plugin_bin_flow::run_impl(Some(" /abs/plugin/root\n"))
+        .expect("absolute root resolves");
+    assert_eq!(path, "/abs/plugin/root/bin/flow");
+}
+
+#[test]
+fn run_impl_errors_when_whitespace_only_after_trim() {
+    let err = flow_rs::plugin_bin_flow::run_impl(Some("   \t  ")).unwrap_err();
+    assert_eq!(err.1, 1);
+    assert!(err.0.contains("unset or empty"), "got {}", err.0);
+}

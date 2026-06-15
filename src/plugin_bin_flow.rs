@@ -30,19 +30,26 @@ use std::path::Path;
 /// absolute. Returns `Err((msg, 1))` when it is unset/empty (the
 /// `None`/empty arm) or non-absolute.
 ///
+/// Applies the same NUL-strip + surrounding-whitespace-trim hygiene the
+/// `agent_prompt_scan` plugin-root carve-out applies, so the path this
+/// resolver emits and the prefix that carve-out admits derive
+/// identically from the same `CLAUDE_PLUGIN_ROOT` value — the
+/// one-source contract holds even for a hygiene-affected env value (a
+/// trailing-newline or NUL-padded root would otherwise produce a path
+/// the trimmed/NUL-stripped carve-out could never admit).
+///
 /// Pure over its input so every branch is reachable without mutating
 /// process env; `run_impl_main` reads the env and delegates here.
 pub fn run_impl(claude_plugin_root: Option<&str>) -> Result<(String, i32), (String, i32)> {
-    let root = match claude_plugin_root {
-        Some(r) if !r.is_empty() => r,
-        _ => {
-            return Err((
-                "CLAUDE_PLUGIN_ROOT is unset or empty; cannot resolve the plugin bin/flow path"
-                    .to_string(),
-                1,
-            ));
-        }
-    };
+    let cleaned = claude_plugin_root.unwrap_or("").replace('\0', "");
+    let root = cleaned.trim();
+    if root.is_empty() {
+        return Err((
+            "CLAUDE_PLUGIN_ROOT is unset or empty; cannot resolve the plugin bin/flow path"
+                .to_string(),
+            1,
+        ));
+    }
     if !Path::new(root).is_absolute() {
         return Err((
             format!(

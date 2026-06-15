@@ -162,9 +162,9 @@ fn validator_normalizes_input_per_security_gates() {
 
 const WORKTREE: &str = "/Users/alice/.worktrees/feat";
 
-// Existing call sites pass `None` for plugin_root: these cases exercise
-// behavior unrelated to the plugin-root carve-out, so no carve-out is in
-// effect. The carve-out's own cases below pass a `Some(...)` value.
+// A `None` plugin_root disables the plugin-root carve-out; cases using
+// this constant exercise behavior where the carve-out is not in effect.
+// The carve-out's own cases below pass a `Some(...)` value.
 const NO_PLUGIN_ROOT: Option<&str> = None;
 
 #[test]
@@ -294,7 +294,7 @@ fn validate_agent_prompt_blocks_absolute_with_trailing_parentdir() {
 const PLUGIN_ROOT: &str = "/Users/alice/.claude/plugins/flow";
 
 #[test]
-fn agent_prompt_allows_path_under_plugin_root() {
+fn agent_prompt_allows_resolved_plugin_bin_flow_path() {
     // The parent substitutes the resolved absolute plugin `bin/flow`
     // path into the adversarial / ci-fixer agent prompt. That path is
     // under the plugin root, outside the worktree — the carve-out must
@@ -303,12 +303,15 @@ fn agent_prompt_allows_path_under_plugin_root() {
     let prompt = "Re-run /Users/alice/.claude/plugins/flow/bin/flow ci to verify.";
     let (allowed, msg) =
         validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, Some(PLUGIN_ROOT));
-    assert!(allowed, "plugin-root path must be allowed; msg={msg}");
+    assert!(
+        allowed,
+        "resolved plugin bin/flow path must be allowed; msg={msg}"
+    );
 }
 
 #[test]
 fn agent_prompt_blocks_out_of_worktree_path_when_plugin_root_set() {
-    // The carve-out is scoped to the plugin-root subtree only: a path
+    // The carve-out is scoped to the resolved bin/flow path only: a path
     // outside both the worktree AND the plugin root is still blocked
     // even when plugin_root is a valid absolute path.
     let prompt = "Read /etc/hosts and report.";
@@ -317,6 +320,23 @@ fn agent_prompt_blocks_out_of_worktree_path_when_plugin_root_set() {
     assert!(
         !allowed,
         "non-plugin-root out-of-worktree path must block even with plugin_root set"
+    );
+}
+
+#[test]
+fn agent_prompt_blocks_non_bin_flow_path_under_plugin_root() {
+    // The carve-out admits ONLY the resolved `<plugin_root>/bin/flow`
+    // path the resolver emits — not the whole plugin subtree. A
+    // non-`bin/flow` path UNDER the plugin root is still out-of-worktree
+    // (in a target project the plugin lives outside the project) and
+    // must stay blocked. A whole-subtree carve-out would have allowed
+    // it.
+    let prompt = "Read /Users/alice/.claude/plugins/flow/src/secret.rs and report.";
+    let (allowed, _) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, Some(PLUGIN_ROOT));
+    assert!(
+        !allowed,
+        "a non-bin/flow path under the plugin root must be blocked"
     );
 }
 
