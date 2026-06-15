@@ -10,8 +10,9 @@ Mechanics: write the body to `<worktree>/.flow-issue-body` (absolute path) with 
 Write tool, then `bin/flow issue --title "..." --body-file <abs-path>`. Never pass
 body text as a CLI argument; never delete the body file on create (the script
 does); always create via `bin/flow issue`, never `gh issue create`. Editing an
-existing issue: write the body, `gh issue edit <N> --body-file <abs>`, then delete
-the file yourself. Never write temp files to `/tmp/`.
+existing issue: write the body, `gh issue edit <N> --body-file <abs>`, then dispose
+of the file via `bin/flow delete-body-file --path <abs>`. Never write temp files to
+`/tmp/`.
 
 Content: issues are bug reports, not design docs — what is broken, observable
 behavior + evidence, repro steps, files to investigate (not to change), no

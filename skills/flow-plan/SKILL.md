@@ -974,15 +974,23 @@ retry the edit silently. The recovery command shape:
 > re-run `gh issue edit <N> --body-file
 > .flow-issue-body-<id> --add-label decomposed`."
 
-`gh issue edit` does not auto-delete the body file. Delete the
-temp file explicitly via the Write tool by writing an empty
-string to `.flow-issue-body-<id>`, then ignore the empty file —
-the worktree cleanup at Phase 4 Complete handles disposal. (The
-Bash permission allow-list refuses ad-hoc `rm` calls during a
-flow per `.claude/rules/permissions.md`; rewriting to empty is
-the sanctioned alternative.) Skip this empty-write step when
-`gh issue edit` failed — preserving the body file on disk gives
-the user a concrete artifact to retry the edit against.
+`gh issue edit` does not auto-delete the body file (unlike
+`bin/flow issue` on the create path, which self-cleans). After a
+successful edit, dispose of the temp file via `bin/flow
+delete-body-file` — it validates the path and removes the file
+from inside the FLOW process (the Bash allow-list refuses ad-hoc
+`rm` during a flow per `.claude/rules/permissions.md`). The
+`--path` is the worktree-local body file, resolved against the
+worktree cwd; pass the worktree-absolute path when the cwd may
+have drifted:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow delete-body-file --path .flow-issue-body-<id>
+```
+
+Skip this delete when `gh issue edit` failed — preserving the
+body file on disk gives the user a concrete artifact to retry the
+edit against.
 
 Capture the issue's URL from the `gh issue view` JSON fetched at
 Step 2 (the `url` field), then record the issue in the state file
@@ -1241,8 +1249,10 @@ slash command directly.
 - Always use the Write tool to create body files
   (`.flow-issue-body-<id>`) — never pass body text as a CLI
   argument.
-- Never delete the body file — the `bin/flow issue` script
-  handles cleanup.
+- On the create path, never delete the body file — the `bin/flow
+  issue` script self-cleans. On the edit-in-place path, dispose of
+  it after a successful `gh issue edit` via `bin/flow
+  delete-body-file --path .flow-issue-body-<id>`.
 - Treat absence or unknown values of the `.flow.json` `role`
   field as "no preferred default" and proceed silently. Never
   block on a missing field.
