@@ -2013,11 +2013,19 @@ fn handle_agent_call(
         crate::flow_paths::compute_worktree_root(&c.to_string_lossy()).map(PathBuf::from)
     });
     if let Some(root) = worktree_root {
+        // Read CLAUDE_PLUGIN_ROOT here (the hook's own env) so the
+        // prompt scan's plugin-root carve-out admits the resolved
+        // absolute plugin `bin/flow` path the parent substitutes into
+        // adversarial / ci-fixer agent prompts. The value is threaded
+        // as a parameter (not read inside the scan) so the carve-out
+        // stays env-race-free unit-testable.
+        let plugin_root = std::env::var("CLAUDE_PLUGIN_ROOT").ok();
         let (prompt_allowed, prompt_message) =
             crate::hooks::agent_prompt_scan::validate_agent_prompt(
                 prompt_field,
                 &root,
                 flow_active,
+                plugin_root.as_deref(),
             );
         if !prompt_allowed {
             return Some((2, Some(prompt_message)));

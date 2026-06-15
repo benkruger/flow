@@ -355,13 +355,36 @@ cwd, matching the `assets/bin-stubs/test.sh` examples
 (`tests/test_adversarial_flow.rs`,
 `test/adversarial_flow_test.rb`, etc.).
 
-Capture these two values for Step 2 (use the trimmed path
-verbatim, including extension — the project's `bin/test` owns
-both):
+**Resolve the absolute plugin `bin/flow` path.**
+
+The adversarial agent runs `<test_command>` from inside its own
+sub-agent session, where the plugin-root prefix is not expanded and the
+literal token would not resolve. Resolve the absolute path here in the
+parent and substitute it into the agent prompt instead:
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow plugin-bin-flow
+```
+
+Capture the trimmed stdout as `<flow_cli>` — an absolute path ending
+`/bin/flow`.
+
+<HARD-GATE>
+If `plugin-bin-flow` exits non-zero (the plugin root is unset, empty,
+or non-absolute), surface the stderr message and halt. Do NOT embed the
+non-path error string into the adversarial agent prompt, and do NOT
+fall back to the unexpanded plugin-root token. Resolve the plugin root
+and re-run Review.
+</HARD-GATE>
+
+Capture these values for Step 2 (use the trimmed path verbatim,
+including extension — the project's `bin/test` owns both):
 
 - `<temp_test_file>` = (trimmed output of `bin/test --adversarial-path`)
+- `<flow_cli>` = (trimmed output of `bin/flow plugin-bin-flow`)
 - `<test_command>` = the bash invocation shown below, with
-  `<temp_test_file>` substituted by the value captured above
+  `<temp_test_file>` and `<flow_cli>` substituted by the values
+  captured above
 
 The adversarial agent invokes `<test_command>` with a 10-minute
 Bash tool timeout (`timeout: 600000`) — CI runs can take 3–4
@@ -369,7 +392,7 @@ minutes and the default 2-minute timeout would background the
 process, defeating the gate (per `.claude/rules/ci-is-a-gate.md`):
 
 ```bash
-${CLAUDE_PLUGIN_ROOT}/bin/flow ci --test --file <temp_test_file>
+<flow_cli> ci --test --file <temp_test_file>
 ```
 
 The adversarial agent always launches when `bin/test

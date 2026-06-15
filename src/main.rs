@@ -45,6 +45,7 @@ use flow_rs::phase_enter;
 use flow_rs::phase_finalize;
 use flow_rs::phase_transition;
 use flow_rs::plan_from_issue;
+use flow_rs::plugin_bin_flow;
 use flow_rs::prime_check;
 use flow_rs::prime_setup;
 use flow_rs::promote_permissions;
@@ -417,6 +418,12 @@ enum Commands {
     /// Print the integration branch this flow coordinates against.
     #[command(name = "base-branch")]
     BaseBranch,
+
+    /// Resolve and print the absolute plugin `bin/flow` path for
+    /// substitution into FLOW sub-agent commands (replaces the
+    /// unexpanded plugin-root prefix on `bin/flow`).
+    #[command(name = "plugin-bin-flow")]
+    PluginBinFlow,
 
     /// Poll the latest integration-branch CI run until it concludes.
     #[command(name = "wait-for-release-ci")]
@@ -923,6 +930,13 @@ fn main() {
                 }
             }
         }
+        Some(Commands::PluginBinFlow) => match plugin_bin_flow::run_impl_main() {
+            Ok((text, code)) => flow_rs::dispatch::dispatch_text(&text, code),
+            Err((msg, code)) => {
+                eprintln!("{}", msg);
+                process::exit(code);
+            }
+        },
         Some(Commands::WaitForReleaseCi(args)) => {
             let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let (value, code) = wait_for_release_ci::run_impl_main(&args, &cwd);

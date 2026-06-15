@@ -33,6 +33,18 @@
 //!   substantive-diff path there. The carve-out is scoped to the
 //!   current flow's branch subdirectory, NOT the whole
 //!   `.flow-states/` root that every concurrent flow shares.
+//!   A second carve-out admits exactly the resolved
+//!   `<plugin_root>/bin/flow` path (`plugin_root` is the
+//!   caller-supplied `CLAUDE_PLUGIN_ROOT` value): the parent
+//!   substitutes that resolved absolute path (from `bin/flow
+//!   plugin-bin-flow`) into the adversarial / ci-fixer agent prompts,
+//!   and it is outside the worktree. The carve-out is scoped to the
+//!   single `bin/flow` path the resolver emits — NOT the whole plugin
+//!   subtree, since a non-`bin/flow` plugin path is still
+//!   out-of-worktree. The plugin-root value is validated non-empty and
+//!   absolute and fails closed (no carve-out) when it is `None`, empty,
+//!   or non-absolute. The caller — not this module — reads the env
+//!   value so the carve-out stays env-race-free unit-testable.
 //!
 //! The `Constructor Invariant Audit` for this module per
 //! `.claude/rules/extract-helper-refactor.md`:
@@ -170,10 +182,21 @@ fn normalize_path_lexical(p: &Path) -> PathBuf {
 /// is sliced at `AGENT_PROMPT_BYTE_CAP` along a UTF-8 char boundary
 /// BEFORE the regex sweep so unbounded input cannot produce
 /// unbounded I/O.
+///
+/// `plugin_root` is the caller-supplied `CLAUDE_PLUGIN_ROOT` value
+/// (the caller reads the env so this function stays env-race-free
+/// unit-testable). A candidate that normalizes under the resolved
+/// `<plugin_root>/bin/flow` path is allowed — the parent substitutes
+/// that path into the adversarial / ci-fixer agent prompts, and it is
+/// outside the worktree. The carve-out admits only the `bin/flow` path
+/// the resolver emits, not the whole plugin subtree, and fails closed
+/// (candidate stays blocked) when `plugin_root` is `None`, empty after
+/// trimming, or non-absolute.
 pub fn validate_agent_prompt(
     prompt: Option<&str>,
     worktree_root: &Path,
     flow_active: bool,
+    plugin_root: Option<&str>,
 ) -> (bool, String) {
     if !flow_active {
         return (true, String::new());
@@ -247,6 +270,39 @@ pub fn validate_agent_prompt(
                 );
                 if resolved_norm.starts_with(&flow_states_branch) {
                     continue;
+                }
+            }
+            // Plugin-root carve-out: the parent substitutes the
+            // resolved absolute plugin `bin/flow` path (from
+            // `bin/flow plugin-bin-flow`) into the adversarial /
+            // ci-fixer agent prompts. That path lives outside the
+            // worktree, so without this carve-out engaging the worktree
+            // gate would hard-block every such launch. Admit ONLY the
+            // resolved `<plugin_root>/bin/flow` path — the single shape
+            // the resolver ever emits — NOT the whole plugin subtree: a
+            // non-`bin/flow` path under the plugin root is still
+            // out-of-worktree (in a target project the plugin lives
+            // outside the project) and must stay blocked. The env value
+            // is hygiene-stripped of NUL bytes and surrounding
+            // whitespace (matching `plugin_bin_flow::run_impl`), but the
+            // prefix comparison is case-preserving (paths are
+            // case-sensitive) — both sides are compared as
+            // lexically-normalized paths. Fail closed (no carve-out,
+            // candidate stays blocked) when `plugin_root` is `None`,
+            // empty after trimming, or non-absolute, per
+            // `.claude/rules/security-gates.md` "Fail Closed" and the
+            // env-validation requirement.
+            if let Some(pr) = plugin_root {
+                let pr_clean = pr.replace('\0', "");
+                let pr_clean = pr_clean.trim();
+                if !pr_clean.is_empty() {
+                    let pr_path = Path::new(pr_clean);
+                    if pr_path.is_absolute() {
+                        let pr_bin_flow = normalize_path_lexical(&pr_path.join("bin").join("flow"));
+                        if resolved_norm.starts_with(&pr_bin_flow) {
+                            continue;
+                        }
+                    }
                 }
             }
             return (

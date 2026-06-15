@@ -44,7 +44,11 @@ rules files, the adversarial agent's probe path resolved by shelling
 out to `bin/test --adversarial-path` (the path lives inside the
 project's test tree so the language runner can discover it; halt on
 exit 2 from an unconfigured stub), the `bin/flow ci --test --file`
-runner command, and a narrowed list of doc paths likely affected by
+runner command built from the absolute plugin `bin/flow` path
+resolved via `bin/flow plugin-bin-flow` (so the adversarial sub-agent
+runs a fully-resolved command with no unexpanded plugin-root token;
+halt if the plugin root cannot be resolved), and a narrowed list of
+doc paths likely affected by
 the diff (derived from `git diff --name-only` via filename
 heuristics — passed to the documentation agent in Step 2 so it
 investigates only those paths instead of the full docs tree). Run

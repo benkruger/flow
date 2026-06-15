@@ -228,14 +228,26 @@ queued flow would hit the same failure. The 30-minute stale timeout
 releases the lock if the user does not act.
 
 **If `"status": "deps_ci_failed"`** — dependencies were updated but
-post-deps CI failed consistently. Launch the `ci-fixer` sub-agent to
-diagnose and fix. Use the Agent tool:
+post-deps CI failed consistently. First resolve the absolute plugin
+`bin/flow` path for the ci-fixer prompt (the sub-agent runs it in its
+own session, where the plugin-root prefix is not expanded):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow plugin-bin-flow
+```
+
+Capture the trimmed stdout as `<flow_cli>`. If it exits non-zero (the
+plugin root is unset, empty, or non-absolute), surface the stderr
+message and halt — do NOT embed the unexpanded plugin-root token in
+the ci-fixer prompt. Then launch the `ci-fixer` sub-agent to diagnose
+and fix. Use the Agent tool:
 
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix bin/flow ci failures after dependency update"`
 
-Provide the CI output from the `output` field in the prompt so the
-sub-agent knows what failed.
+Provide the CI output from the `output` field AND the resolved
+`<flow_cli>` path in the prompt, so the sub-agent knows what failed
+and which `bin/flow` to run.
 
 Wait for the sub-agent to return.
 

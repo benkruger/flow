@@ -34,7 +34,11 @@ investigation and probe iteration on larger PRs.
 
 The branch name, project CLAUDE.md path, temp test file path
 (`<temp_test_file>`, including its file extension), and test
-command (`<test_command>`) are also provided in the prompt. The
+command (`<test_command>`) are also provided in the prompt.
+`<test_command>` is a fully-resolved absolute invocation — the
+calling skill already substituted the absolute plugin `bin/flow`
+path into it, so run it verbatim. It contains no unexpanded
+environment-variable token and needs no expansion. The temp test
 path was chosen by the project's `bin/test --adversarial-path`,
 normalized by the calling skill (trailing whitespace stripped),
 and points inside the project's test tree so the language test

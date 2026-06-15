@@ -8665,3 +8665,84 @@ fn performative_pause_scanner_normalizes_smart_quote_apostrophe() {
         violations[0]
     );
 }
+
+/// Agent instruction files (`agents/*.md`) must never embed the
+/// `${CLAUDE_PLUGIN_ROOT}` token — in prose OR inside a fenced code
+/// block. A command in an agent file is executed by the sub-agent in
+/// its own session, where the plugin-root env var is not expanded, so
+/// the literal token fails. The parent resolves the absolute plugin
+/// `bin/flow` path via `bin/flow plugin-bin-flow` and substitutes it;
+/// the agent runs the resolved `<flow_cli>` verbatim. Distinct from
+/// `no_prose_uses_plugin_root_expansion`, which scans prose OUTSIDE
+/// fences only — an agent-executed command lives INSIDE a fence and
+/// would slip past that scan.
+///
+/// Named regression: a future edit reintroduces
+/// `${CLAUDE_PLUGIN_ROOT}/bin/flow …` into an agent's runner fence.
+/// See `.claude/rules/agent-command-paths.md`.
+#[test]
+fn agents_carry_no_plugin_root_expansion() {
+    const FORBIDDEN: &str = "${CLAUDE_PLUGIN_ROOT}";
+    let agents_dir = common::agents_dir();
+    let entries =
+        fs::read_dir(&agents_dir).unwrap_or_else(|e| panic!("agents/ must be readable: {e}"));
+    let mut offenders: Vec<String> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        if content.contains(FORBIDDEN) {
+            offenders.push(entry.file_name().to_string_lossy().to_string());
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "agents/*.md must not embed `{FORBIDDEN}` — sub-agents run their commands in a session \
+         where the plugin-root env var is not expanded; the parent resolves the absolute path \
+         via `bin/flow plugin-bin-flow`. See `.claude/rules/agent-command-paths.md`. \
+         Offending agents: {offenders:?}"
+    );
+}
+
+/// The flow-review adversarial `<test_command>` runner is embedded in
+/// the adversarial sub-agent's prompt and executed in the sub-agent's
+/// session, so it must carry the resolved `<flow_cli>` path, not the
+/// `${CLAUDE_PLUGIN_ROOT}` token (which the child does not expand). The
+/// assertion is bounded to the `<test_command>` block alone — the
+/// adversarial-setup section also holds a legitimate PARENT resolver
+/// fence (`${CLAUDE_PLUGIN_ROOT}/bin/flow plugin-bin-flow`, run by
+/// Claude Code, not the sub-agent), so a whole-section ban would be a
+/// false positive.
+///
+/// Named regression: a future edit reverts the runner block to
+/// `${CLAUDE_PLUGIN_ROOT}/bin/flow ci --test --file <temp_test_file>`.
+/// See `.claude/rules/agent-command-paths.md`.
+#[test]
+fn flow_review_adversarial_test_command_has_no_plugin_root_expansion() {
+    let skill = common::read_skill("flow-review");
+    let after = skill
+        .split_once("`<test_command>` = the bash invocation shown below")
+        .map(|(_, t)| t)
+        .expect("flow-review must define `<test_command>` in Step 1");
+    let block = after
+        .split_once("The adversarial agent always launches")
+        .map(|(s, _)| s)
+        .unwrap_or(after);
+    // Guard against a vacuous pass: the bounded slice must actually
+    // capture the `<test_command>` runner block.
+    assert!(
+        block.contains("ci --test --file"),
+        "the bounded slice must capture the `<test_command>` runner block; \
+         the bounding markers drifted"
+    );
+    assert!(
+        !block.contains("${CLAUDE_PLUGIN_ROOT}"),
+        "the adversarial `<test_command>` runner must use the resolved `<flow_cli>` path, not \
+         the `${{CLAUDE_PLUGIN_ROOT}}` token (the sub-agent does not expand it). \
+         See `.claude/rules/agent-command-paths.md`."
+    );
+}

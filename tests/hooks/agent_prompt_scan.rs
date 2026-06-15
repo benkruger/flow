@@ -162,12 +162,18 @@ fn validator_normalizes_input_per_security_gates() {
 
 const WORKTREE: &str = "/Users/alice/.worktrees/feat";
 
+// A `None` plugin_root disables the plugin-root carve-out; cases using
+// this constant exercise behavior where the carve-out is not in effect.
+// The carve-out's own cases below pass a `Some(...)` value.
+const NO_PLUGIN_ROOT: Option<&str> = None;
+
 #[test]
 fn validate_agent_prompt_silent_outside_active_flow() {
     let (allowed, msg) = validate_agent_prompt(
         Some("Read /etc/hosts for inspection."),
         Path::new(WORKTREE),
         false,
+        NO_PLUGIN_ROOT,
     );
     assert!(allowed);
     assert!(msg.is_empty());
@@ -175,14 +181,14 @@ fn validate_agent_prompt_silent_outside_active_flow() {
 
 #[test]
 fn validate_agent_prompt_allows_missing_prompt_field() {
-    let (allowed, msg) = validate_agent_prompt(None, Path::new(WORKTREE), true);
+    let (allowed, msg) = validate_agent_prompt(None, Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(allowed);
     assert!(msg.is_empty());
 }
 
 #[test]
 fn validate_agent_prompt_allows_empty_prompt() {
-    let (allowed, msg) = validate_agent_prompt(Some(""), Path::new(WORKTREE), true);
+    let (allowed, msg) = validate_agent_prompt(Some(""), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(allowed);
     assert!(msg.is_empty());
 }
@@ -193,14 +199,16 @@ fn validate_agent_prompt_allows_in_worktree_path() {
     // inside — exercises both the relative-candidate `Path::join`
     // branch and the CurDir arm of `normalize_path_lexical`.
     let prompt = "Read ./src/lib.rs for context.";
-    let (allowed, msg) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    let (allowed, msg) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(allowed, "expected allow; got msg={}", msg);
 }
 
 #[test]
 fn validate_agent_prompt_blocks_absolute_path_outside_worktree() {
     let prompt = "Read /etc/hosts and report the contents.";
-    let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    let (allowed, _) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(!allowed);
 }
 
@@ -212,13 +220,19 @@ fn validate_agent_prompt_blocks_dotvenv_path_outside_worktree() {
     // pins the bare ".venv" candidate which contains traversal-free
     // segments and resolves to an out-of-worktree absolute reference.
     let prompt = "Inspect /home/alice/.venv/lib/foo.py";
-    let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    let (allowed, _) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(!allowed);
 }
 
 #[test]
 fn validate_agent_prompt_message_names_offending_path_and_worktree() {
-    let (_, msg) = validate_agent_prompt(Some("Read /etc/hosts."), Path::new(WORKTREE), true);
+    let (_, msg) = validate_agent_prompt(
+        Some("Read /etc/hosts."),
+        Path::new(WORKTREE),
+        true,
+        NO_PLUGIN_ROOT,
+    );
     assert!(
         msg.contains("/etc/hosts"),
         "message must name path: {}",
@@ -241,7 +255,8 @@ fn validate_agent_prompt_byte_capped_at_prompt_length_limit() {
     // no candidates → allow.
     let pad_len = AGENT_PROMPT_BYTE_CAP - 2;
     let prompt = format!("{}{}{}", "a".repeat(pad_len), "🦀", " /etc/hosts");
-    let (allowed, _) = validate_agent_prompt(Some(&prompt), Path::new(WORKTREE), true);
+    let (allowed, _) =
+        validate_agent_prompt(Some(&prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(allowed, "post-cap content must not reach the scanner");
 }
 
@@ -251,7 +266,8 @@ fn validate_agent_prompt_blocks_traversal_path() {
     // containing `/../` — exercises the malformed-candidate branch
     // in validate_agent_prompt.
     let prompt = "Read /etc/../passwd and report.";
-    let (allowed, msg) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    let (allowed, msg) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(!allowed);
     assert!(
         msg.contains("malformed"),
@@ -268,8 +284,112 @@ fn validate_agent_prompt_blocks_absolute_with_trailing_parentdir() {
     // arm of normalize_path_lexical and the outside-worktree
     // rejection in validate_agent_prompt.
     let prompt = "Inspect /tmp/foo/.. and report.";
-    let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    let (allowed, _) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(!allowed);
+}
+
+// --- plugin-root carve-out ---
+
+const PLUGIN_ROOT: &str = "/Users/alice/.claude/plugins/flow";
+
+#[test]
+fn agent_prompt_allows_resolved_plugin_bin_flow_path() {
+    // The parent substitutes the resolved absolute plugin `bin/flow`
+    // path into the adversarial / ci-fixer agent prompt. That path is
+    // under the plugin root, outside the worktree — the carve-out must
+    // allow it so engaging the worktree gate does not hard-block the
+    // launch.
+    let prompt = "Re-run /Users/alice/.claude/plugins/flow/bin/flow ci to verify.";
+    let (allowed, msg) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, Some(PLUGIN_ROOT));
+    assert!(
+        allowed,
+        "resolved plugin bin/flow path must be allowed; msg={msg}"
+    );
+}
+
+#[test]
+fn agent_prompt_blocks_out_of_worktree_path_when_plugin_root_set() {
+    // The carve-out is scoped to the resolved bin/flow path only: a path
+    // outside both the worktree AND the plugin root is still blocked
+    // even when plugin_root is a valid absolute path.
+    let prompt = "Read /etc/hosts and report.";
+    let (allowed, _) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, Some(PLUGIN_ROOT));
+    assert!(
+        !allowed,
+        "non-plugin-root out-of-worktree path must block even with plugin_root set"
+    );
+}
+
+#[test]
+fn agent_prompt_blocks_non_bin_flow_path_under_plugin_root() {
+    // The carve-out admits ONLY the resolved `<plugin_root>/bin/flow`
+    // path the resolver emits — not the whole plugin subtree. A
+    // non-`bin/flow` path UNDER the plugin root is still out-of-worktree
+    // (in a target project the plugin lives outside the project) and
+    // must stay blocked. A whole-subtree carve-out would have allowed
+    // it.
+    let prompt = "Read /Users/alice/.claude/plugins/flow/src/secret.rs and report.";
+    let (allowed, _) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, Some(PLUGIN_ROOT));
+    assert!(
+        !allowed,
+        "a non-bin/flow path under the plugin root must be blocked"
+    );
+}
+
+#[test]
+fn agent_prompt_plugin_root_carveout_fails_closed_when_unset() {
+    // Fail closed: plugin_root None means no carve-out — a path that
+    // WOULD be under the plugin root is blocked because the gate cannot
+    // confirm the plugin root.
+    let prompt = "Run /Users/alice/.claude/plugins/flow/bin/flow ci now.";
+    let (allowed, _) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
+    assert!(!allowed, "unset plugin_root must not admit the carve-out");
+}
+
+#[test]
+fn agent_prompt_plugin_root_carveout_fails_closed_when_empty() {
+    // Fail closed: an empty plugin_root (after trim) is not a usable
+    // root — block.
+    let prompt = "Run /Users/alice/.claude/plugins/flow/bin/flow ci now.";
+    let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, Some("   "));
+    assert!(!allowed, "empty plugin_root must not admit the carve-out");
+}
+
+#[test]
+fn agent_prompt_plugin_root_carveout_fails_closed_when_not_absolute() {
+    // Fail closed: a non-absolute plugin_root is rejected before the
+    // prefix comparison.
+    let prompt = "Run /Users/alice/.claude/plugins/flow/bin/flow ci now.";
+    let (allowed, _) = validate_agent_prompt(
+        Some(prompt),
+        Path::new(WORKTREE),
+        true,
+        Some("relative/plugins/flow"),
+    );
+    assert!(
+        !allowed,
+        "non-absolute plugin_root must not admit the carve-out"
+    );
+}
+
+#[test]
+fn agent_prompt_plugin_root_carveout_trims_and_strips_nul() {
+    // The env value is hygiene-normalized (NUL strip + surrounding
+    // whitespace trim) before the absolute/prefix checks — but the
+    // comparison itself is case-preserving (paths are case-sensitive).
+    let prompt = "Re-run /Users/alice/.claude/plugins/flow/bin/flow ci to verify.";
+    let padded = "  \0/Users/alice/.claude/plugins/flow\0  ";
+    let (allowed, msg) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, Some(padded));
+    assert!(
+        allowed,
+        "trimmed/NUL-stripped plugin_root must admit the carve-out; msg={msg}"
+    );
 }
 
 // --- .flow-states/ carve-out (Task 10 Branch Enumeration Table) ---
@@ -285,7 +405,8 @@ fn agent_prompt_allows_flow_states_diff_path() {
     // launches.
     let prompt = "Read the substantive diff at \
                   /Users/alice/.flow-states/feat/full-diff.diff and review it.";
-    let (allowed, msg) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    let (allowed, msg) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(allowed, "flow-states diff path must be allowed; msg={msg}");
 }
 
@@ -296,7 +417,8 @@ fn agent_prompt_blocks_arbitrary_out_of_worktree_path() {
     // still blocked. The carve-out is scoped to the branch subtree
     // only — it does not widen to the whole project root.
     let prompt = "Read /Users/alice/src/other.rs and report.";
-    let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    let (allowed, _) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(!allowed, "non-.flow-states out-of-worktree path must block");
 }
 
@@ -309,7 +431,7 @@ fn agent_prompt_flow_states_derive_handles_no_worktrees_segment() {
     // than crashing.
     let worktree_root = Path::new("/Users/alice/plainroot");
     let prompt = "Read /Users/alice/elsewhere/.flow-states/x and report.";
-    let (allowed, _) = validate_agent_prompt(Some(prompt), worktree_root, true);
+    let (allowed, _) = validate_agent_prompt(Some(prompt), worktree_root, true, NO_PLUGIN_ROOT);
     assert!(
         !allowed,
         "no-/.worktrees/ worktree_root yields no project_root → block"
@@ -328,7 +450,7 @@ fn agent_prompt_flow_states_derive_uses_rightmost_worktrees() {
     // derivation would have blocked it.
     let worktree_root = Path::new("/home/dev/.worktrees/outer/.worktrees/feat");
     let prompt = "Review /home/dev/.worktrees/outer/.flow-states/feat/full-diff.diff now.";
-    let (allowed, msg) = validate_agent_prompt(Some(prompt), worktree_root, true);
+    let (allowed, msg) = validate_agent_prompt(Some(prompt), worktree_root, true, NO_PLUGIN_ROOT);
     assert!(
         allowed,
         "rightmost project_root .flow-states/<branch>/ must be allowed; msg={msg}"
@@ -347,7 +469,8 @@ fn agent_prompt_blocks_other_branch_flow_states() {
     // per-branch state. A whole-`.flow-states/`-root carve-out would
     // have allowed it.
     let prompt = "Read /Users/alice/.flow-states/other-branch/state.json and report.";
-    let (allowed, _) = validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true);
+    let (allowed, _) =
+        validate_agent_prompt(Some(prompt), Path::new(WORKTREE), true, NO_PLUGIN_ROOT);
     assert!(
         !allowed,
         "a .flow-states/ path under a different branch must be blocked"

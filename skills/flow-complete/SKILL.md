@@ -178,14 +178,27 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow set-timestamp --set "_continue_context=Self-invok
 To continue, invoke `flow:flow-complete --continue-step` using
 the Skill tool as your final action. Do not output anything else after this invocation.
 
-**If `"path": "ci_failed"`** — local CI failed. Launch the
-`ci-fixer` sub-agent to diagnose and fix. Use the Agent tool:
+**If `"path": "ci_failed"`** — local CI failed. First resolve the
+absolute plugin `bin/flow` path for the ci-fixer prompt (the sub-agent
+runs it in its own session, where the plugin-root prefix is not
+expanded):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow plugin-bin-flow
+```
+
+Capture the trimmed stdout as `<flow_cli>`. If it exits non-zero (the
+plugin root is unset, empty, or non-absolute), surface the stderr
+message and halt — do NOT embed the unexpanded plugin-root token in
+the ci-fixer prompt. Then launch the `ci-fixer` sub-agent to diagnose
+and fix. Use the Agent tool:
 
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix CI failures before merge"`
 
-Provide the `output` field from the JSON in the prompt so the sub-agent
-knows what failed.
+Provide the `output` field from the JSON AND the resolved `<flow_cli>`
+path in the prompt, so the sub-agent knows what failed and which
+`bin/flow` to run.
 
 If fixed, set the resume step, continuation flags, and commit:
 
@@ -279,11 +292,25 @@ ${CLAUDE_PLUGIN_ROOT}/bin/flow ci
 
 If it passes, continue to Step 3.
 
-If it fails, launch the `ci-fixer` sub-agent to diagnose and fix.
-Use the Agent tool:
+If it fails, first resolve the absolute plugin `bin/flow` path for the
+ci-fixer prompt (the sub-agent runs it in its own session, where the
+plugin-root prefix is not expanded):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow plugin-bin-flow
+```
+
+Capture the trimmed stdout as `<flow_cli>`. If it exits non-zero (the
+plugin root is unset, empty, or non-absolute), surface the stderr
+message and halt — do NOT embed the unexpanded plugin-root token in
+the ci-fixer prompt. Then launch the `ci-fixer` sub-agent to diagnose
+and fix. Use the Agent tool:
 
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix CI failures before merge"`
+
+Provide the CI `output` AND the resolved `<flow_cli>` path in the
+prompt, so the sub-agent knows what failed and which `bin/flow` to run.
 
 If fixed, record the resume step, set continuation flags, commit, and
 self-invoke to re-check:
@@ -434,14 +461,26 @@ Continue to Step 5.
 **If `"status": "ci_failed"`** — main had new commits that were merged
 into the branch without conflicts and pushed, but the inline CI on the
 freshly-merged tree failed. The `output` field carries the CI output.
-Launch the `ci-fixer` sub-agent to diagnose and fix. Use the Agent
-tool:
+First resolve the absolute plugin `bin/flow` path for the ci-fixer
+prompt (the sub-agent runs it in its own session, where the
+plugin-root prefix is not expanded):
+
+```bash
+${CLAUDE_PLUGIN_ROOT}/bin/flow plugin-bin-flow
+```
+
+Capture the trimmed stdout as `<flow_cli>`. If it exits non-zero (the
+plugin root is unset, empty, or non-absolute), surface the stderr
+message and halt — do NOT embed the unexpanded plugin-root token in
+the ci-fixer prompt. Then launch the `ci-fixer` sub-agent to diagnose
+and fix. Use the Agent tool:
 
 - `subagent_type`: `"flow:ci-fixer"`
 - `description`: `"Fix CI failures before merge"`
 
-Provide the `output` field from the JSON in the prompt so the sub-agent
-knows what failed.
+Provide the `output` field from the JSON AND the resolved `<flow_cli>`
+path in the prompt, so the sub-agent knows what failed and which
+`bin/flow` to run.
 
 If fixed, record the resume step, set continuation flags, and commit:
 
