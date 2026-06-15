@@ -120,6 +120,7 @@ Permanent on-main artifacts that future-session readers should know about by nam
 - `bin/flow resume-anchor` (`src/resume_anchor.rs`) — read-side resolver for the phase-anchor marker; recovers `worktree_cwd` from the session-keyed marker so a `--continue-step` resume re-anchors cwd, emitting `ok`/`no_marker`/`error` (fail-closed on a corrupt marker).
 - `bin/flow plugin-bin-flow` (`src/plugin_bin_flow.rs`) — resolves and prints the absolute plugin `bin/flow` path so a parent skill substitutes it into a sub-agent command instead of the unexpanded plugin-root token (the child session does not expand env vars); fail-closed structured error when the plugin root is unset/empty/non-absolute.
 - `src/commands/blocked_common.rs` — shared entry helper for the `_blocked` state mutators; `resolve_blocked_state_path()` reads+discards stdin, resolves the branch, and derives the state-file path for `set-blocked`/`clear-blocked` (no existence check — each mutator keeps its own).
+- `src/delete_body_file.rs` — `bin/flow delete-body-file` disposes of an edit-in-place issue-body temp file (the only orphaning path for `gh issue edit --body-file`); validates the path and reports `deleted`/`missing`/`error`.
 
 ## Maintainer Skills (private to this repo)
 

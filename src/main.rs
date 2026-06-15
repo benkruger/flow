@@ -25,6 +25,7 @@ use flow_rs::complete_finalize;
 use flow_rs::complete_merge;
 use flow_rs::complete_post_merge;
 use flow_rs::complete_preflight;
+use flow_rs::delete_body_file;
 use flow_rs::extract_release_notes;
 use flow_rs::finalize_commit;
 use flow_rs::format_complete_summary;
@@ -100,6 +101,12 @@ enum Commands {
     /// `.flow-states/<branch>/` files for the Review sub-agents.
     #[command(name = "capture-diff")]
     CaptureDiff(capture_diff::Args),
+
+    /// Remove an edit-in-place issue-body temp file (the only orphaning
+    /// path for `gh issue edit --body-file`). Validates the path and
+    /// reports `deleted` / `missing` / `error`.
+    #[command(name = "delete-body-file")]
+    DeleteBodyFile(delete_body_file::Args),
 
     /// Pre-merge freshness check: fetch main, verify branch is up-to-date.
     #[command(name = "check-freshness")]
@@ -590,6 +597,11 @@ fn main() {
             let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
             let root = project_root();
             let (value, code) = capture_diff::run_impl(&args, &root, &cwd);
+            flow_rs::dispatch::dispatch_json(value, code);
+        }
+        Some(Commands::DeleteBodyFile(args)) => {
+            let cwd = std::env::current_dir().unwrap_or(std::path::PathBuf::from("."));
+            let (value, code) = delete_body_file::run_impl_main(&args, &cwd);
             flow_rs::dispatch::dispatch_json(value, code);
         }
         Some(Commands::CheckFreshness { raw_args }) => {

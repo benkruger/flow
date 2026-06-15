@@ -43,6 +43,7 @@ fn all_subcommands_have_working_help() {
     let subcommands = [
         "bump-version",
         "capture-diff",
+        "delete-body-file",
         "check-freshness",
         "check-phase",
         "phase-transition",
@@ -423,6 +424,93 @@ fn main_init_state_empty_name_exits_1() {
         "expected stdout JSON to contain `\"step\":\"args\"`, got: {}",
         stdout
     );
+}
+
+/// Build a neutralized `flow-rs` command for the `delete-body-file`
+/// envelope tests: removes the recursion guard, points `HOME` at a
+/// throwaway dir (no user dotfiles), and invalidates `GH_TOKEN` so no
+/// network call can hang or mutate. The caller sets `current_dir` to a
+/// non-flow tempdir so state-reading code cannot couple to an active flow.
+fn delete_body_file_cmd(home: &std::path::Path) -> Command {
+    let mut cmd = flow_rs_no_recursion();
+    cmd.env_remove("CLAUDE_CODE_SESSION_ID");
+    cmd.env("HOME", home);
+    cmd.env("GH_TOKEN", "invalid");
+    cmd
+}
+
+/// `flow-rs delete-body-file --path <abs>` on an existing regular file
+/// exits 0 with `{"status":"ok","outcome":"deleted"}` and removes the
+/// file — covers the `DeleteBodyFile` arm's `Ok` wiring end-to-end.
+#[test]
+fn delete_body_file_real_file_deleted_envelope() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let file = tmp.path().join(".flow-issue-body-xyz");
+    std::fs::write(&file, "body").unwrap();
+
+    let output = delete_body_file_cmd(tmp.path())
+        .args(["delete-body-file", "--path", file.to_str().unwrap()])
+        .current_dir(tmp.path())
+        .output()
+        .expect("spawn flow-rs delete-body-file");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).expect("stdout must be JSON");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["outcome"], "deleted");
+    assert!(!file.exists(), "the file must be removed");
+}
+
+/// `flow-rs delete-body-file --path <missing absolute>` exits 0 with
+/// `{"status":"ok","outcome":"missing"}` — a NotFound target is tolerated.
+#[test]
+fn delete_body_file_missing_file_envelope() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let file = tmp.path().join("does-not-exist");
+
+    let output = delete_body_file_cmd(tmp.path())
+        .args(["delete-body-file", "--path", file.to_str().unwrap()])
+        .current_dir(tmp.path())
+        .output()
+        .expect("spawn flow-rs delete-body-file");
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).expect("stdout must be JSON");
+    assert_eq!(json["status"], "ok");
+    assert_eq!(json["outcome"], "missing");
+}
+
+/// `flow-rs delete-body-file --path <relative basename>` resolves the
+/// relative path against the process cwd and deletes the file — confirms
+/// the CLI binds `cwd` to the process directory.
+#[test]
+fn delete_body_file_relative_path_resolves_against_cwd() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let file = tmp.path().join(".flow-issue-body-rel");
+    std::fs::write(&file, "body").unwrap();
+
+    let output = delete_body_file_cmd(tmp.path())
+        .args(["delete-body-file", "--path", ".flow-issue-body-rel"])
+        .current_dir(tmp.path())
+        .output()
+        .expect("spawn flow-rs delete-body-file");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value = serde_json::from_str(stdout.trim()).expect("stdout must be JSON");
+    assert_eq!(json["outcome"], "deleted");
+    assert!(!file.exists(), "the relative-path file must be removed");
 }
 
 /// `flow-rs init-state "valid-name"` in an isolated tempdir exits 1
