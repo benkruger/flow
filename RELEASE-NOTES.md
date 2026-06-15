@@ -1,5 +1,33 @@
 # Release Notes
 
+## v2.7.0 — Four-phase lifecycle: the Learn phase is gone
+
+### Breaking changes
+
+- **Learn phase removed** — FLOW is now a four-phase lifecycle: Start,
+  Code, Review, Complete. The `/flow:flow-learn` skill and its phase
+  state are gone; corrections route through `/flow:flow-note` and the
+  Review phase instead (#1897).
+
+### New features
+
+- **Documentation review agent** — the Review phase now runs a fourth
+  cognitively isolated agent that checks for documentation drift and
+  comprehension barriers, alongside reviewer, pre-mortem, and
+  adversarial (#1847, #1851).
+
+### Improvements
+
+- **Complete merges the code** — the Complete phase now owns the PR
+  merge directly (#1879).
+- **Simpler commit-message handling** — the commit path was streamlined
+  and a leftover issue-body temp file is now cleaned up (#1894, #1901).
+- **Sub-agents stop cleanly** — FLOW sub-agents are now stopped
+  reliably (#1899).
+- **Terser agent-guidance rules** — capped at 40 lines each.
+- **CI complexity guard** and an extract-helper job dedup (#1849,
+  #1846), plus routine dependency updates.
+
 ## v2.6.1 — Auto-corrected state writes, Review-agent confirmation, deadlock fix
 
 ### Improvements

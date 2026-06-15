@@ -59,7 +59,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.6.1 — flow:flow-triage-issue — STARTING
+  FLOW v2.7.0 — flow:flow-triage-issue — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -418,7 +418,7 @@ Output the following banner in your response (not via Bash) inside a fenced code
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.6.1 — flow:flow-triage-issue — COMPLETE
+  ✓ FLOW v2.7.0 — flow:flow-triage-issue — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````

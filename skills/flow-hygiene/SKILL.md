@@ -28,7 +28,7 @@ At the very start, output the following banner in your response (not via Bash) i
 ````markdown
 ```text
 ──────────────────────────────────────────────────
-  FLOW v2.6.1 — flow:flow-hygiene — STARTING
+  FLOW v2.7.0 — flow:flow-hygiene — STARTING
 ──────────────────────────────────────────────────
 ```
 ````
@@ -294,7 +294,7 @@ After the report, output the following banner in your response (not via Bash) in
 ````markdown
 ```text
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✓ FLOW v2.6.1 — flow:flow-hygiene — COMPLETE
+  ✓ FLOW v2.7.0 — flow:flow-hygiene — COMPLETE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ```
 ````
