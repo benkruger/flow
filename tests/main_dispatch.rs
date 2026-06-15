@@ -472,7 +472,7 @@ fn delete_body_file_real_file_deleted_envelope() {
 #[test]
 fn delete_body_file_missing_file_envelope() {
     let tmp = tempfile::tempdir().expect("tempdir");
-    let file = tmp.path().join("does-not-exist");
+    let file = tmp.path().join(".flow-issue-body-missing");
 
     let output = delete_body_file_cmd(tmp.path())
         .args(["delete-body-file", "--path", file.to_str().unwrap()])
